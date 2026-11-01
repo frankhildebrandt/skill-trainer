@@ -1,3 +1,4 @@
+import type { CursorRunCatalog } from "./cursor-runs";
 import type { ActivityUpdate } from "./run-log";
 
 export interface AggregateScore {
@@ -204,5 +205,9 @@ export interface TrainerApi {
   cancel: () => Promise<void>;
   writeBack: () => Promise<{ backupPath: string | null; skillPath: string }>;
   openPath: (target: string) => Promise<void>;
+  pickCursorRun: (workspacePath: string) => Promise<string | null>;
+  listCursorRuns: (scope?: "local" | "cloud") => Promise<CursorRunCatalog>;
+  chooseCursorRun: (prompt: string) => Promise<void>;
+  cancelCursorRun: () => Promise<void>;
   onEvent: (cb: (event: TrainerEvent) => void) => () => void;
 }

@@ -12,6 +12,7 @@ export function TrainerForm({
   onChooseSkill,
   onChooseDestination,
   onChooseFolder,
+  onPickRun,
 }: {
   form: TrainRequest;
   running: boolean;
@@ -21,6 +22,7 @@ export function TrainerForm({
   onChooseSkill: () => void;
   onChooseDestination: () => void;
   onChooseFolder: () => void;
+  onPickRun: () => void;
 }) {
   const paths = useRef({ create: "", existing: "" });
   const workflow = form.workflow ?? "train";
@@ -116,8 +118,18 @@ export function TrainerForm({
               <button type="button" onClick={onChooseFolder} disabled={running}>Wählen</button>
             </div>
           </label>
-          <label>
-            Trainingsauftrag
+          <div className="field">
+            <div className="field-head">
+              <span>Trainingsauftrag</span>
+              <button
+                type="button"
+                onClick={onPickRun}
+                disabled={running || !form.workspacePath.trim()}
+                title={form.workspacePath.trim() ? "Lokale und Cloud-Agents dieses Repos" : "Zuerst einen Projektordner wählen"}
+              >
+                Aus Cursor-Läufen
+              </button>
+            </div>
             <textarea
               value={form.auftrag}
               disabled={running}
@@ -126,7 +138,8 @@ export function TrainerForm({
               rows={4}
               placeholder="Konkrete Aufgabe, an der der Skill geprüft wird"
             />
-          </label>
+            <small>Oder einen vorhandenen Lauf dieses Repos auswählen. Die Suche geht durch Auftrag und Antworten.</small>
+          </div>
           <label>
             Weitere Aufträge
             <textarea value={form.extraTasks} disabled={running} onChange={(event) => onChange({ ...form, extraTasks: event.target.value })} rows={2} placeholder="Eine Zeile pro Variante" />
