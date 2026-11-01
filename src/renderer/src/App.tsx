@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { estimateRuns } from "@shared/estimate";
 import { applyRunUpdate, type RunBlock } from "@shared/run-log";
 import { changedLines } from "@shared/text-diff";
@@ -11,9 +11,21 @@ import type {
   TrainRequest,
   Trajectory,
 } from "@shared/types";
+import {
+  BrainIcon,
+  BrandMark,
+  CheckIcon,
+  ExternalIcon,
+  PlayIcon,
+  PulseIcon,
+  SparkIcon,
+  StopIcon,
+  TerminalIcon,
+} from "./icons";
 import { MarkdownView } from "./MarkdownView";
 import { TrainerForm } from "./TrainerForm";
 import { bundleChanged, measuredImprovement, reportBody, resultTitle } from "./report";
+import { ResizeHandle, usePaneSizes } from "./ResizeHandle";
 
 interface LiveRun {
   runId: string;
@@ -82,6 +94,8 @@ export function App() {
   const seenAgents = useRef(new Set<string>());
   const feedStick = useRef(true);
   const agentStick = useRef(true);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const panes = usePaneSizes(layoutRef);
 
   function pushFeed(item: DistributiveOmit<FeedItem, "id">) {
     const id = ++seq.current;
@@ -303,21 +317,46 @@ export function App() {
 
   const improved = summary ? bundleChanged(summary) : false;
   const activeRun = runs.find((run) => run.runId === active);
+  const liveCount = runs.filter((run) => isLive(run)).length;
+  const loggedIn = auth?.state === "logged-in";
 
   return (
-    <div className="app">
-      <header>
-        <div className="mark">ST</div>
-        <h1>Skill Trainer</h1>
+    <div className={running ? "app is-running" : "app"}>
+      <Backdrop />
+
+      <header className="titlebar">
+        <div className="brand">
+          <BrandMark />
+          <h1>Skill Trainer</h1>
+        </div>
+        <div className="status" aria-live="polite">
+          {running ? (
+            <span className="status-pill live">
+              <span className="pulse" aria-hidden="true" />
+              {phase}
+              {liveCount > 0 ? <span className="status-count">{liveCount} aktiv</span> : null}
+            </span>
+          ) : summary ? (
+            <span className={improved ? "status-pill good" : "status-pill"}>{resultTitle(summary)}</span>
+          ) : null}
+        </div>
         <div className="auth">
-          <span className={auth?.state === "logged-in" ? "pill ok" : "pill"}>{authLabel(auth)}</span>
-          <button type="button" onClick={() => void login()} disabled={running}>
+          <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={authLabel(auth)}>
+            <span className="pill-dot" aria-hidden="true" />
+            {authLabel(auth)}
+          </span>
+          <button type="button" className="ghost" onClick={() => void login()} disabled={running}>
             Anmelden
           </button>
         </div>
+        {running ? <div className="beam" aria-hidden="true" /> : null}
       </header>
 
-      <div className="layout">
+      <div
+        className="layout"
+        ref={layoutRef}
+        style={{ gridTemplateColumns: `${panes.sizes.panel}px 1px ${panes.sizes.feed}px 1px minmax(0, 1fr)` }}
+      >
         <form
           className="panel"
           onSubmit={(event) => {
@@ -325,35 +364,54 @@ export function App() {
             void start();
           }}
         >
-          <TrainerForm
-            form={form}
-            running={running}
-            models={models}
-            skillName={skillName}
-            onChange={setForm}
-            onChooseSkill={() => void chooseSkill()}
-            onChooseDestination={() => void chooseDestination()}
-            onChooseFolder={() => void chooseFolder()}
-          />
-          <p className="estimate">
-            Bis zu {estimate.total} Agent-Läufe · {estimate.attempts} Training/Gate · {estimate.optimizer} Optimierer
-            {estimate.checks ? ` · ${estimate.checks} Testskript` : ""}
-          </p>
-          {form.runBudget !== null && estimate.total > (form.runBudget ?? 48) ? (
-            <p className="budget-error" role="status">Laufbudget überschritten. Budget erhöhen oder Schritte und Wiederholungen senken.</p>
-          ) : null}
-
-          <div className="actions">
-            <button type="submit" className="primary" disabled={running}>
-              {running ? phase : "Start"}
-            </button>
-            <button type="button" onClick={() => void api.cancel()} disabled={!running}>
-              Abbrechen
-            </button>
+          <div className="panel-scroll">
+            <TrainerForm
+              form={form}
+              running={running}
+              models={models}
+              skillName={skillName}
+              onChange={setForm}
+              onChooseSkill={() => void chooseSkill()}
+              onChooseDestination={() => void chooseDestination()}
+              onChooseFolder={() => void chooseFolder()}
+            />
+          </div>
+          <div className="panel-foot">
+            <p className="estimate">
+              Bis zu <strong>{estimate.total}</strong> Agent-Läufe · {estimate.attempts} Training/Gate · {estimate.optimizer} Optimierer
+              {estimate.checks ? ` · ${estimate.checks} Testskript` : ""}
+            </p>
+            {form.runBudget !== null && estimate.total > (form.runBudget ?? 48) ? (
+              <p className="budget-error" role="status">Laufbudget überschritten. Budget erhöhen oder Schritte und Wiederholungen senken.</p>
+            ) : null}
+            <div className="actions">
+              <button type="submit" className={running ? "primary busy" : "primary"} disabled={running}>
+                {running ? <span className="spin" aria-hidden="true" /> : <PlayIcon />}
+                <span className="label">{running ? phase : "Start"}</span>
+              </button>
+              <button type="button" className="danger" onClick={() => void api.cancel()} disabled={!running}>
+                <StopIcon />
+                Abbrechen
+              </button>
+            </div>
           </div>
         </form>
 
+        <ResizeHandle
+          label="Breite der Einstellungen"
+          value={panes.sizes.panel}
+          min={panes.limits.panel.min}
+          max={panes.limits.panel.max}
+          initial={panes.limits.panel.initial}
+          onChange={panes.setPanel}
+        />
+
         <section className="feed">
+          <div className="pane-head">
+            <PulseIcon />
+            <span>Verlauf</span>
+            {runs.length > 0 ? <span className="count">{runs.length} Läufe</span> : null}
+          </div>
           <div
             className="sheet"
             onScroll={(event) => {
@@ -365,11 +423,15 @@ export function App() {
             }}
           >
             <div className="column">
-              {feed.length === 0 ? <p className="quiet">Noch kein Lauf.</p> : null}
+              {feed.length === 0 ? (
+                <Empty icon={<SparkIcon />} title="Noch kein Lauf.">
+                  Skill, Projekt und Auftrag setzen, dann starten. Phasen, Agenten und Befunde erscheinen hier.
+                </Empty>
+              ) : null}
               {feed.map((item) => {
                 if (item.type === "note") {
                   return (
-                    <div key={item.id} className="msg">
+                    <div key={item.id} className="msg enter">
                       <MarkdownView text={item.text} />
                     </div>
                   );
@@ -377,12 +439,18 @@ export function App() {
                 if (item.type === "agent") {
                   const run = runs.find((entry) => entry.runId === item.runId);
                   if (!run) return null;
+                  const classes = ["agent-link", "enter", isLive(run) ? "live" : "", run.runId === active ? "on" : ""];
                   return (
-                    <button key={item.id} type="button" className="agent-link" onClick={() => openAgent(run.runId)}>
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={classes.filter(Boolean).join(" ")}
+                      onClick={() => openAgent(run.runId)}
+                    >
                       <LiveMark run={run} />
-                      <span>{agentLabel(run)}</span>
+                      <span className="agent-name">{agentLabel(run)}</span>
                       <span className="agent-time">{runDuration(run, now)}</span>
-                      <span className="agent-state">{runState(run)}</span>
+                      <span className={`agent-state ${stateTone(run)}`}>{runState(run)}</span>
                     </button>
                   );
                 }
@@ -406,9 +474,23 @@ export function App() {
           </div>
         </section>
 
+        <ResizeHandle
+          label="Breite des Verlaufs"
+          value={panes.sizes.feed}
+          min={panes.limits.feed.min}
+          max={panes.limits.feed.max}
+          initial={panes.limits.feed.initial}
+          onChange={panes.setFeed}
+        />
+
         <section className="logs">
           <div className="tabs" role="tablist">
-            {tabs.length === 0 ? <span className="tab-hint">Agenten</span> : null}
+            {tabs.length === 0 ? (
+              <span className="tab-hint">
+                <TerminalIcon />
+                Agenten
+              </span>
+            ) : null}
             {tabs.map((tab) => {
               const run = runs.find((item) => item.runId === tab);
               const live = run ? isLive(run) : false;
@@ -435,7 +517,7 @@ export function App() {
               if (node && agentStick.current) node.scrollTop = node.scrollHeight;
             }}
           >
-            <div className="column">
+            <div className="column switch" key={activeRun?.runId ?? "none"}>
               {activeRun ? (
                 <>
                   <div className="agent-head">
@@ -455,21 +537,50 @@ export function App() {
                       ))}
                     </div>
                   ) : (
-                    <p className="quiet">Wartet auf die erste Ausgabe.</p>
+                    <p className="quiet waiting">Wartet auf die erste Ausgabe.</p>
                   )}
                   {activeRun.trajectory?.keptWorkspace ? (
-                    <button type="button" onClick={() => void api.openPath(activeRun.trajectory!.keptWorkspace!)}>
+                    <button
+                      type="button"
+                      className="align-start"
+                      onClick={() => void api.openPath(activeRun.trajectory!.keptWorkspace!)}
+                    >
+                      <ExternalIcon />
                       Kopie öffnen
                     </button>
                   ) : null}
                 </>
               ) : (
-                <p className="quiet">Klicke einen Lauf im Feed, dann steht sein Log hier.</p>
+                <Empty icon={<TerminalIcon />} title="Kein Agent geöffnet.">
+                  Klicke einen Lauf im Feed, dann steht sein Log hier.
+                </Empty>
               )}
             </div>
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function Backdrop() {
+  return (
+    <div className="backdrop" aria-hidden="true">
+      <div className="aurora a1" />
+      <div className="aurora a2" />
+      <div className="aurora a3" />
+      <div className="grid-lines" />
+      <div className="grain" />
+    </div>
+  );
+}
+
+function Empty({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <div className="empty enter">
+      <div className="empty-icon">{icon}</div>
+      <strong>{title}</strong>
+      <p>{children}</p>
     </div>
   );
 }
@@ -480,17 +591,22 @@ function FindingCard({ step }: { step: StepRecord }) {
     ...(step.appliedFiles ?? []).map((edit) => `${edit.op} ${edit.path}: ${edit.content || edit.target || ""}`),
   ];
   return (
-    <article className={`card ${step.accepted ? "kept" : "dropped"}`}>
+    <article className={`card enter ${step.accepted ? "kept" : "dropped"}`}>
       <header>
         <strong>{stepTitle(step)}</strong>
         <span className={step.accepted ? "tag ok" : "tag"}>{step.accepted ? "übernommen" : "verworfen"}</span>
       </header>
       {step.reasoning ? <MarkdownView text={step.reasoning} /> : null}
-      <p className="mono">
-        {step.selectionAfter
-          ? `${pct(step.selectionBefore.gate)} → ${pct(step.selectionAfter.gate)} · ${step.selectionAfter.passes}/${step.selectionAfter.runs} grün`
-          : "kein Gate"}
-      </p>
+      {step.selectionAfter ? (
+        <div className="score">
+          <ScoreBar before={step.selectionBefore.gate} after={step.selectionAfter.gate} />
+          <p className="mono">
+            {`${pct(step.selectionBefore.gate)} → ${pct(step.selectionAfter.gate)} · ${step.selectionAfter.passes}/${step.selectionAfter.runs} grün`}
+          </p>
+        </div>
+      ) : (
+        <p className="mono">kein Gate</p>
+      )}
       {edits.length > 0 ? (
         <pre>
           <code>{edits.join("\n\n")}</code>
@@ -517,12 +633,16 @@ function Report({
   const files = fileChanges(summary);
   const accepted = summary.steps.filter((step) => step.accepted && step.kind !== "baseline");
   return (
-    <article className="card report">
+    <article className={improved ? "card report enter improved" : "card report enter"}>
       <header>
-        <strong>Bericht</strong>
+        <strong>
+          <SparkIcon />
+          Bericht
+        </strong>
         <span className={measuredImprovement(summary) ? "tag ok" : "tag"}>{resultTitle(summary)}</span>
       </header>
       <MarkdownView text={reportBody(summary)} />
+      {summary.best.runs > 0 ? <ScoreBar before={summary.baseline.gate} after={summary.best.gate} /> : null}
       <h3>Änderungen</h3>
       {skillDiff ? (
         <pre>
@@ -546,14 +666,26 @@ function Report({
       ))}
       <div className="actions">
         <button type="button" className="primary" disabled={!improved} onClick={onApply}>
+          <CheckIcon />
           Änderungen übernehmen
         </button>
         <button type="button" onClick={onOpen}>
+          <ExternalIcon />
           Sitzung öffnen
         </button>
       </div>
-      {notice ? <p className="quiet">{notice}</p> : null}
+      {notice ? <p className="quiet notice enter">{notice}</p> : null}
     </article>
+  );
+}
+
+function ScoreBar({ before, after }: { before: number; after: number }) {
+  const tone = after > before ? "up" : after < before ? "down" : "flat";
+  return (
+    <div className={`scorebar ${tone}`} aria-hidden="true">
+      <span className="scorebar-before" style={{ width: `${clampPct(before)}%` }} />
+      <span className="scorebar-after" style={{ width: `${clampPct(after)}%` }} />
+    </div>
   );
 }
 
@@ -594,6 +726,12 @@ function runDuration(run: LiveRun, now: number): string {
   return `${hours}h ${(minutes % 60).toString().padStart(2, "0")}m`;
 }
 
+function stateTone(run: LiveRun): string {
+  if (!run.trajectory) return run.settled ? "" : "live";
+  if (run.trajectory.score.status === "cancelled") return "";
+  return run.trajectory.score.hard >= 1 ? "good" : "bad";
+}
+
 function runState(run: LiveRun): string {
   if (run.trajectory) return scoreLabel(run.trajectory);
   if (run.settled) return "fertig";
@@ -631,22 +769,6 @@ function BlockView({ block }: { block: RunBlock }) {
     );
   }
   return <p className="note">{block.text}</p>;
-}
-
-function BrainIcon() {
-  return (
-    <svg className="brain" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
-      <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
-      <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
-      <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
-      <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
-      <path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
-      <path d="M19.938 10.5a4 4 0 0 1 .585.396" />
-      <path d="M6 18a4 4 0 0 1-1.967-.516" />
-      <path d="M19.967 17.484A4 4 0 0 1 18 18" />
-    </svg>
-  );
 }
 
 function skillLabel(preview: { name: string; fileCount: number }): string {
@@ -716,6 +838,10 @@ function authLabel(auth: AuthStatus | null): string {
 
 function pct(value: number): string {
   return `${(value * 100).toFixed(1)}`;
+}
+
+function clampPct(value: number): number {
+  return Math.min(100, Math.max(0, value * 100));
 }
 
 function messageOf(err: unknown): string {

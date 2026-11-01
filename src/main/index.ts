@@ -17,8 +17,11 @@ function createWindow(): BrowserWindow {
     minWidth: 980,
     minHeight: 700,
     title: "Skill Trainer",
-    backgroundColor: "#16130f",
+    backgroundColor: "#030509",
     icon: loadIcon(),
+    ...(process.platform === "darwin"
+      ? { titleBarStyle: "hidden" as const, trafficLightPosition: { x: 18, y: 19 } }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
