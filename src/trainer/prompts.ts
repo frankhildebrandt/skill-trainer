@@ -12,7 +12,7 @@ export function buildTargetPrompt(input: {
 }): string {
   const setting = input.emptyRepo
     ? `This repository is empty except for the skill${input.authoredChecks ? " and the grading script under .skill-trainer/checks" : ""}. The original project is not available. You cannot read it, and you have no shell. Create and edit files in this repository only. The harness runs the verify command after you stop.`
-    : `You are working in a copy of an existing project.`;
+    : `You are working in a disposable copy of an existing project. This copy has its own git repository and is not a checkout of the original. Change files only in this copy. Do not read or write the original project.`;
   const owned = input.authoredChecks
     ? `The harness restores \`.skill-trainer/checks\` immediately before grading. Editing or deleting that directory does not change the score.\n\n`
     : "";

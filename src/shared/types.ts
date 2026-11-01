@@ -174,6 +174,12 @@ export interface ModelOption {
   label: string;
 }
 
+export interface ProjectSkill {
+  root: string;
+  relative: string;
+  name: string;
+}
+
 export type TrainerEvent =
   | { type: "log"; message: string }
   | { type: "phase"; phase: string }
@@ -191,6 +197,7 @@ export interface TrainerApi {
   pickSkill: () => Promise<string | null>;
   pickSkillDestination: () => Promise<string | null>;
   pickFolder: () => Promise<string | null>;
+  listProjectSkills: (workspacePath: string) => Promise<ProjectSkill[]>;
   readSkill: (skillPath: string) => Promise<{
     name: string;
     chars: number;
