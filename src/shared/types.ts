@@ -1,3 +1,5 @@
+import type { TranslationKey, TranslationValues } from "./i18n";
+import type { Locale } from "./i18n/types";
 import type { CursorRunCatalog } from "./cursor-runs";
 import type { ActivityUpdate } from "./run-log";
 
@@ -180,11 +182,16 @@ export interface ProjectSkill {
   name: string;
 }
 
+export interface LocalizedLabel {
+  key: TranslationKey;
+  values?: TranslationValues;
+}
+
 export type TrainerEvent =
   | { type: "log"; message: string }
   | { type: "phase"; phase: string }
   | { type: "run_started"; run: { runId: string; phase: Trajectory["phase"]; ground: AttemptGround; taskPrompt: string } }
-  | { type: "run_activity"; runId: string; update?: ActivityUpdate; title?: string; settled?: boolean }
+  | { type: "run_activity"; runId: string; update?: ActivityUpdate; title?: string; label?: LocalizedLabel; settled?: boolean }
   | { type: "run_finished"; run: Trajectory }
   | { type: "step"; step: StepRecord }
   | { type: "done"; summary: SessionSummary }
@@ -194,6 +201,9 @@ export type TrainerEvent =
 export type SessionEvent = TrainerEvent & { sessionId: string };
 
 export interface TrainerApi {
+  loadLocale: () => Promise<Locale>;
+  saveLocale: (locale: Locale) => Promise<void>;
+  onLocaleChange: (cb: (locale: Locale) => void) => () => void;
   authStatus: () => Promise<AuthStatus>;
   authLogin: () => Promise<AuthStatus>;
   listModels: () => Promise<{ models: ModelOption[]; error?: string }>;

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LocalizedError } from "../shared/localized-error";
 import type { SessionEvent, TrainRequest } from "../shared/types";
 
 const mocks = vi.hoisted(() => ({
@@ -11,11 +12,14 @@ const mocks = vi.hoisted(() => ({
   derive: vi.fn(),
   verify: vi.fn(),
   attempt: vi.fn(),
+  openDialog: vi.fn(),
+  saveDialog: vi.fn(),
+  languages: ["de-CH"],
 }));
 vi.mock("electron", () => ({
-  app: { getPath: () => mocks.userData },
+  app: { getPath: () => mocks.userData, getPreferredSystemLanguages: () => mocks.languages },
   ipcMain: { handle: (name: string, fn: (...args: any[]) => Promise<any>) => mocks.handlers.set(name, fn) },
-  dialog: {}, shell: {},
+  dialog: { showOpenDialog: mocks.openDialog, showSaveDialog: mocks.saveDialog }, shell: {},
 }));
 vi.mock("../trainer/cursor-runner", () => ({
   proposeWithCursor: mocks.propose,
@@ -43,8 +47,12 @@ beforeEach(async () => {
   mocks.derive.mockReset();
   mocks.verify.mockReset();
   mocks.attempt.mockReset();
+  mocks.openDialog.mockReset();
+  mocks.saveDialog.mockReset();
+  mocks.languages = ["de-CH"];
   events.length = 0;
   registerBackend();
+  await mocks.handlers.get("locale:load")!();
   attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send: (_name: string, event: SessionEvent) => events.push(event) } } as never);
 });
 
@@ -177,5 +185,81 @@ describe("skill workflow IPC", () => {
     }));
     await expect(mocks.handlers.get("skill:derive")!(null, skill, "  ")).rejects.toThrow(/Modell/);
     await expect(mocks.handlers.get("skill:derive")!(null, path.join(root, "missing"), "composer-2.5")).rejects.toThrow(/existiert nicht/);
+  });
+});
+
+
+describe("language preferences IPC", () => {
+  it("detects a supported system language and uses English as fallback", async () => {
+    mocks.languages = ["pt-BR", "fr-CH"];
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("fr");
+    mocks.languages = ["pt-BR"];
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("en");
+  });
+
+  it("persists the selected language independently and broadcasts it to the window", async () => {
+    const send = vi.fn();
+    attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send } } as never);
+    await mocks.handlers.get("locale:save")!(null, "it");
+    expect(send).toHaveBeenCalledWith("locale:changed", "it");
+    expect(JSON.parse(await fs.readFile(path.join(mocks.userData, "preferences.json"), "utf8"))).toEqual({ locale: "it" });
+    await expect(fs.stat(path.join(mocks.userData, "settings.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("it");
+  });
+
+  it("rejects unsupported languages without changing the preference", async () => {
+    await expect(mocks.handlers.get("locale:save")!(null, "xx")).rejects.toThrow("Nicht unterstützte Sprache");
+    expect(await mocks.handlers.get("locale:load")!()).toBe("de");
+  });
+
+  it("uses system detection when a saved preference is invalid", async () => {
+    await fs.mkdir(mocks.userData, { recursive: true });
+    await fs.writeFile(path.join(mocks.userData, "preferences.json"), JSON.stringify({ locale: "xx" }));
+    mocks.languages = ["nl-BE"];
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("nl");
+  });
+
+  it("localizes native file dialogs using the selected language", async () => {
+    mocks.openDialog.mockResolvedValue({ canceled: true, filePaths: [] });
+    mocks.saveDialog.mockResolvedValue({ canceled: true });
+    await mocks.handlers.get("locale:save")!(null, "es");
+    await mocks.handlers.get("dialog:skill")!();
+    expect(mocks.openDialog).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ title: "Elegir una carpeta de skill o SKILL.md" }));
+    await mocks.handlers.get("dialog:folder")!();
+    expect(mocks.openDialog).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ title: "Elegir una carpeta de proyecto" }));
+    await mocks.handlers.get("dialog:skill-destination")!();
+    expect(mocks.saveDialog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: "Definir la nueva carpeta del skill", buttonLabel: "Elegir destino" }));
+  });
+});
+
+
+describe("localized diagnostic IPC", () => {
+  it("resolves low-level skill errors in the saved UI language before IPC serialization", async () => {
+    await mocks.handlers.get("locale:save")!(null, "fr");
+    await expect(mocks.handlers.get("skill:read")!(null, path.join(root, "missing-skill")))
+      .rejects.toThrow("Le chemin du skill n’existe pas.");
+  });
+});
+
+
+describe("localized skill analysis IPC", () => {
+  it("passes the selected language to analysis and preserves the generated field values", async () => {
+    const skill = path.join(root, "parser");
+    await fs.mkdir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), document);
+    await mocks.handlers.get("locale:save")!(null, "nl");
+    const fields = { ziel: "Logbestanden lezen.", auftrag: "Zet logs/app.log om naar een tabel." };
+    mocks.derive.mockResolvedValue(fields);
+    expect(await mocks.handlers.get("skill:derive")!(null, skill, "composer-2.5")).toEqual(fields);
+    expect(mocks.derive).toHaveBeenCalledWith(expect.objectContaining({ locale: "nl", translate: expect.any(Function) }));
+    await expect(mocks.handlers.get("skill:derive")!(null, skill, ""))
+      .rejects.toThrow("Geen model geselecteerd.");
+    mocks.derive.mockRejectedValue(new LocalizedError("runner.analysisFailed"));
+    await expect(mocks.handlers.get("skill:derive")!(null, skill, "composer-2.5"))
+      .rejects.toThrow("Analyse mislukt.");
   });
 });

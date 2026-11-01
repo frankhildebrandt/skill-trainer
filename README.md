@@ -41,6 +41,12 @@ Ein Skill darf ein Ordner sein: `SKILL.md` plus Skripte, Referenzen und weitere 
 
 Während der Läufe bekommt der Agent den Skill-Text direkt in den Prompt und den Skill-Ordner in der Kopie (`.cursor/skills/…`, plus der ursprüngliche Pfad, wenn der Skill im Projekt liegt). Projekt-Settings sind an, globale Skills aus, damit nicht eine ältere Nutzerfassung mitmisst.
 
+## Sprachen
+
+Die Oberfläche unterstützt Deutsch, Englisch, Französisch, Italienisch, Spanisch und Niederländisch. Die Sprachwahl steht oben im Fenster und wirkt sofort, auch in der Lauf-Auswahl. Beim ersten Start wird die erste unterstützte Systemsprache verwendet, andernfalls Englisch. Eine manuell gewählte Sprache bleibt für spätere Starts gespeichert, unabhängig von den Trainingseinstellungen.
+
+Übersetzungen liegen unter `src/shared/i18n/`. Neue Texte bekommen dort einen Schlüssel mit Übersetzungen für alle sechs Sprachen. Datei-, Pfad-, Prüf- und Optimierer-Meldungen verwenden ebenfalls die gewählte Sprache. „Mit Modell füllen“ erstellt neue Ziel- und Auftragstexte in dieser Sprache. Vorhandene Aufträge, Skill-Inhalte und Agent-Antworten behalten ihre Originalsprache.
+
 ## Start
 
 Node 22.13 oder neuer.

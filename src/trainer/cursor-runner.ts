@@ -1,3 +1,5 @@
+import { translate, type Translate, type Locale, type TranslationKey } from "../shared/i18n";
+import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { Agent, CursorAgentError, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -74,25 +76,30 @@ export async function executeAgent(input: ExecuteRequest): Promise<AgentTrace> {
 }
 
 export async function proposeWithCursor(
-  input: ProposeCall & { model: string; cwd: string; onActivity?: (update: ActivityUpdate) => void },
+  input: ProposeCall & { model: string; cwd: string; onActivity?: (update: ActivityUpdate) => void; translate?: Translate },
 ): Promise<Proposal> {
+  const t: Translate = input.translate ?? ((key, values) => translate("de", key, values));
   const prompt = buildOptimizerPrompt(input);
-  const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity);
+  const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity, t);
   return parseProposal(extractJson(text));
 }
 
-/** Reads the selected skill with the chosen model and returns the form fields. */
+/** Reads the selected skill with the chosen model and returns localized form fields. */
 export async function deriveSkillFields(input: {
   model: string;
   skill: string;
   files: SkillFile[];
   signal: AbortSignal;
+  locale?: Locale;
+  translate?: Translate;
 }): Promise<SkillFields> {
-  const prompt = buildSkillFieldsPrompt({ skill: input.skill, files: input.files });
-  const text = await completeText(input.model, os.tmpdir(), prompt, input.signal, undefined, {
+  const t: Translate = input.translate ?? ((key, values) => translate(input.locale ?? "de", key, values));
+  const prompt = buildSkillFieldsPrompt({ skill: input.skill, files: input.files, locale: input.locale });
+  const text = await completeText(input.model, os.tmpdir(), prompt, input.signal, undefined, t, {
     accept: hasSkillFields,
-    problem: skillFieldsProblem,
-    abortMessage: "Analyse abgebrochen",
+    problem: (reply) => skillFieldsProblem(reply, t),
+    abortKey: "runner.analysisCancelled",
+    failureKey: "runner.analysisFailed",
   });
   return readSkillFields(text);
 }
@@ -106,7 +113,8 @@ export async function makeOptimizerDir(sessionDir: string): Promise<string> {
 interface CompleteOptions {
   accept?: (text: string) => boolean;
   problem?: (text: string) => string;
-  abortMessage?: string;
+  abortKey?: TranslationKey;
+  failureKey?: TranslationKey;
 }
 
 async function completeText(
@@ -114,8 +122,9 @@ async function completeText(
   cwd: string,
   prompt: string,
   signal: AbortSignal,
-  onActivity?: (update: ActivityUpdate) => void,
-  options?: CompleteOptions,
+  onActivity: ((update: ActivityUpdate) => void) | undefined,
+  t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-trainer-opt-"));
   await fs.mkdir(dir, { recursive: true });
@@ -123,11 +132,11 @@ async function completeText(
     let last: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity, options);
+        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity, t, options);
       } catch (err) {
         last = err;
         if (attempt === 1 || signal.aborted || isAbortError(err) || !isStall(err)) throw err;
-        onActivity?.({ op: "note", text: "Verbindung stockt, neuer Versuch." });
+        onActivity?.({ op: "note", text: t("runner.retryConnection") });
       }
     }
     throw last;
@@ -142,27 +151,28 @@ async function completeTextOnce(
   storeCwd: string,
   prompt: string,
   signal: AbortSignal,
-  onActivity?: (update: ActivityUpdate) => void,
-  options?: CompleteOptions,
+  onActivity: ((update: ActivityUpdate) => void) | undefined,
+  t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
-  const accept = options?.accept ?? isProposal;
-  const problem = options?.problem ?? proposalProblem;
+  const accept = options.accept ?? isProposal;
+  const problem = options.problem ?? ((text: string) => proposalProblem(text, t));
   const agent = await Agent.create({
     model: { id: model },
     tools: [],
     local: { cwd: dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
   });
   try {
-    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity, accept, options?.abortMessage);
+    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity, t, options);
     if (accept(first)) return first;
-    onActivity?.({ op: "note", text: `Zweiter Versuch im selben Lauf. ${problem(first)}` });
+    onActivity?.({ op: "note", text: t("runner.retryProposal", { reason: problem(first) }) });
     return await sendOnce(
       agent,
       "Your previous reply was not one JSON object. Reply with that JSON object only. Do not restate the analysis.",
       signal,
       onActivity,
-      accept,
-      options?.abortMessage,
+      t,
+      options,
     );
   } finally {
     await agent[Symbol.asyncDispose]();
@@ -174,9 +184,10 @@ async function sendOnce(
   prompt: string,
   signal: AbortSignal,
   onActivity: ((update: ActivityUpdate) => void) | undefined,
-  accept: (text: string) => boolean,
-  abortMessage = "Optimierer abgebrochen",
+  t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
+  const accept = options.accept ?? isProposal;
   const run = await agent.send(prompt);
   const cancel = () => {
     if (run.supports("cancel")) void run.cancel();
@@ -191,7 +202,7 @@ async function sendOnce(
     assistant += update.text;
     if (!accept(assistant)) return;
     proposal = assistant;
-    onActivity?.({ op: "note", text: "Der Vorschlag ist vollständig. Dieser Durchlauf endet hier, damit keine weitere Überlegung im selben Lauf startet." });
+    onActivity?.({ op: "note", text: t("runner.proposalComplete") });
     if (!signal.aborted) cancel();
   };
   try {
@@ -200,37 +211,37 @@ async function sendOnce(
     if (proposal) {
       // The turn was stopped because the proposal was already complete.
     } else if (isAbortError(err) || signal.aborted || isStall(err)) throw err;
-    else onActivity?.({ op: "note", text: err instanceof Error ? err.message : String(err) });
+    else onActivity?.({ op: "note", text: localizedMessage(err, t) });
   }
   const result = await run.wait();
   signal.removeEventListener("abort", cancel);
   if (proposal) return proposal;
   if (result.status === "cancelled") {
-    const error = new Error(abortMessage);
+    const error = new LocalizedError(options.abortKey ?? "runner.cancelled");
     error.name = "AbortError";
     throw error;
   }
   if (result.status === "error") {
-    throw new Error(result.error?.message ?? "Optimierer-Lauf ist fehlgeschlagen.");
+    throw result.error?.message ? new Error(result.error.message) : new LocalizedError(options.failureKey ?? "runner.failed");
   }
   return result.result ?? "";
 }
 
-function skillFieldsProblem(text: string): string {
+function skillFieldsProblem(text: string, t: Translate): string {
   try {
     readSkillFields(text);
-    return "Die erste Antwort enthielt kein Ziel und keinen Auftrag.";
+    return t("runner.noFields");
   } catch (err) {
-    return err instanceof Error ? err.message : "Die erste Antwort war kein auswertbares JSON.";
+    return err instanceof Error ? localizedMessage(err, t) : t("runner.invalidFields");
   }
 }
 
-function proposalProblem(text: string): string {
+function proposalProblem(text: string, t: Translate): string {
   try {
     parseProposal(extractJson(text));
-    return "Die erste Antwort enthielt keinen verwertbaren Vorschlag.";
+    return t("runner.noUsableProposal");
   } catch (err) {
-    return err instanceof Error ? err.message : "Die erste Antwort war kein Vorschlag.";
+    return err instanceof Error ? localizedMessage(err, t) : t("runner.notProposal");
   }
 }
 

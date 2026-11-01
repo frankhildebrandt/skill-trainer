@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { dedupeRuns, filterCursorRuns, matchSnippet, searchTerms, type CursorRunCatalog, type CursorRunOption, type CursorRuntime } from "@shared/cursor-runs";
 import { BrandMark } from "./icons";
+import { useI18n } from "./i18n";
+import type { Locale } from "@shared/i18n";
 
 type RuntimeFilter = "all" | CursorRuntime;
 
 export function RunPicker() {
   const api = window.trainer;
+  const { locale, t } = useI18n();
   const [catalog, setCatalog] = useState<CursorRunCatalog | null>(null);
   const [query, setQuery] = useState("");
   const [runtime, setRuntime] = useState<RuntimeFilter>("all");
@@ -13,10 +16,16 @@ export function RunPicker() {
   const [loading, setLoading] = useState(true);
   const [cloudPending, setCloudPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setCloudPending(true);
+    setError(null);
+    setCloudError(null);
+    setCatalog((prev) => prev ? { ...prev, warnings: [] } : null);
     void api.listCursorRuns("local")
       .then((next) => { if (!cancelled) setCatalog((prev) => mergeCatalog(prev, next)); })
       .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
@@ -25,12 +34,11 @@ export function RunPicker() {
       .then((next) => { if (!cancelled) setCatalog((prev) => mergeCatalog(prev, next)); })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setCatalog((prev) => mergeCatalog(prev, { workspacePath: prev?.workspacePath ?? "", runs: [], warnings: [`Cloud-Agents: ${message}`] }));
+        setCloudError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => { if (!cancelled) setCloudPending(false); });
     return () => { cancelled = true; };
-  }, [api]);
+  }, [api, locale]);
 
   const runs = catalog?.runs ?? [];
   const visible = useMemo(() => filterCursorRuns(runs, query, runtime), [runs, query, runtime]);
@@ -81,7 +89,7 @@ export function RunPicker() {
       <header className="titlebar">
         <div className="brand">
           <BrandMark />
-          <h1>Cursor-Läufe</h1>
+          <h1>{t("runs.title")}</h1>
         </div>
         <div className="status">{place ? <span className="status-pill">{place}</span> : null}</div>
         <div />
@@ -91,8 +99,8 @@ export function RunPicker() {
           <input
             autoFocus
             value={query}
-            placeholder="Volltextsuche in Aufträgen und Antworten"
-            aria-label="Volltextsuche"
+            placeholder={t("runs.searchPlaceholder")}
+            aria-label={t("runs.searchLabel")}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") { event.preventDefault(); move(1); }
@@ -101,17 +109,18 @@ export function RunPicker() {
           />
           <div className="seg" style={{ "--seg-count": 3, "--seg-index": runtime === "local" ? 1 : runtime === "cloud" ? 2 : 0 } as CSSProperties}>
             <span className="seg-thumb" />
-            <Filter label="Alle" count={counts.all} checked={runtime === "all"} onChange={() => setRuntime("all")} />
-            <Filter label="Lokal" count={counts.local} checked={runtime === "local"} onChange={() => setRuntime("local")} />
-            <Filter label="Cloud" count={counts.cloud} checked={runtime === "cloud"} onChange={() => setRuntime("cloud")} />
+            <Filter label={t("runs.all")} count={counts.all} checked={runtime === "all"} onChange={() => setRuntime("all")} />
+            <Filter label={t("runs.local")} count={counts.local} checked={runtime === "local"} onChange={() => setRuntime("local")} />
+            <Filter label={t("runs.cloud")} count={counts.cloud} checked={runtime === "cloud"} onChange={() => setRuntime("cloud")} />
           </div>
         </div>
         {error ? <p className="budget-error" role="alert">{error}</p> : null}
+        {cloudError ? <p className="quiet">{t("runs.cloudError", { message: cloudError })}</p> : null}
         {catalog?.warnings.map((warning) => <p key={warning} className="quiet">{warning}</p>)}
         <div
           className="picker-list"
           role="listbox"
-          aria-label="Cursor-Läufe"
+          aria-label={t("runs.title")}
           aria-busy={loading}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") { event.preventDefault(); move(1); }
@@ -119,11 +128,11 @@ export function RunPicker() {
             if (event.key === "Enter" && selectedRun) { event.preventDefault(); void choose(selectedRun); }
           }}
         >
-          {loading ? <p className="quiet picker-empty">Lade lokale Läufe…</p> : null}
-          {!loading && cloudPending ? <p className="quiet">Cloud-Agents werden geladen…</p> : null}
+          {loading ? <p className="quiet picker-empty">{t("runs.loadingLocal")}</p> : null}
+          {!loading && cloudPending ? <p className="quiet">{t("runs.loadingCloud")}</p> : null}
           {!loading && !cloudPending && visible.length === 0 ? (
             <p className="quiet picker-empty">
-              {runs.length === 0 ? "Für dieses Repo gibt es keine Cursor-Läufe." : "Kein Lauf passt zur Suche."}
+              {t(runs.length === 0 ? "runs.empty" : "runs.noMatch")}
             </p>
           ) : null}
           {visible.map((run) => {
@@ -141,9 +150,9 @@ export function RunPicker() {
               >
                 <span className="run-title"><Highlight text={run.title} query={query} /></span>
                 <span className="run-meta">
-                  <span className={run.runtime === "cloud" ? "pill ok" : "pill"}>{run.runtime === "cloud" ? "Cloud" : "Lokal"}</span>
+                  <span className={run.runtime === "cloud" ? "pill ok" : "pill"}>{t(run.runtime === "cloud" ? "runs.cloud" : "runs.local")}</span>
                   <span>{run.place}</span>
-                  {run.createdAt ? <time dateTime={new Date(run.createdAt).toISOString()}>{formatWhen(run.createdAt)}</time> : null}
+                  {run.createdAt ? <time dateTime={new Date(run.createdAt).toISOString()}>{formatWhen(run.createdAt, locale)}</time> : null}
                 </span>
                 <span className="run-excerpt"><Highlight text={matchSnippet(run, query)} query={query} /></span>
               </button>
@@ -152,11 +161,11 @@ export function RunPicker() {
         </div>
       </div>
       <footer className="picker-foot">
-        <span className="quiet">{loading ? "…" : `${visible.length} von ${runs.length}`}</span>
+        <span className="quiet">{loading ? "…" : t("runs.count", { visible: visible.length.toLocaleString(locale), total: runs.length.toLocaleString(locale) })}</span>
         <div className="actions">
-          <button type="button" onClick={() => void api.cancelCursorRun()} disabled={choosing}>Schließen</button>
+          <button type="button" onClick={() => void api.cancelCursorRun()} disabled={choosing}>{t("runs.close")}</button>
           <button type="button" className="primary" disabled={!selectedRun || choosing} onClick={() => selectedRun && void choose(selectedRun)}>
-            Übernehmen
+            {t("runs.apply")}
           </button>
         </div>
       </footer>
@@ -173,11 +182,12 @@ function mergeCatalog(prev: CursorRunCatalog | null, next: CursorRunCatalog): Cu
 }
 
 function Filter({ label, count, checked, onChange }: { label: string; count: number; checked: boolean; onChange: () => void }) {
+  const { locale } = useI18n();
   return (
     <label>
       <input type="radio" name="runtime" checked={checked} onChange={onChange} />
       {label}
-      <span className="seg-count">{count}</span>
+      <span className="seg-count">{count.toLocaleString(locale)}</span>
     </label>
   );
 }
@@ -202,6 +212,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function formatWhen(value: number): string {
-  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(value);
+function formatWhen(value: number, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(value);
 }

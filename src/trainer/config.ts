@@ -1,3 +1,4 @@
+import { translate, type Locale, type Translate } from "../shared/i18n";
 import { DEFAULT_BUDGET } from "../shared/budget";
 import { estimateRuns } from "../shared/estimate";
 import type { OptimizerBudget, SkillScope, SkillWorkflow, TrainRequest } from "../shared/types";
@@ -30,9 +31,10 @@ export interface NormalizedTrain {
   verifyTimeoutMs: number;
 }
 
-export function normalizeRequest(request: TrainRequest): NormalizedTrain {
+export function normalizeRequest(request: TrainRequest, locale: Locale = "de"): NormalizedTrain {
+  const t: Translate = (key, values) => translate(locale, key, values);
   const workflow = request.workflow ?? "train";
-  if (!["train", "pretrain", "create"].includes(workflow)) throw new Error("Unbekannter Workflow.");
+  if (!["train", "pretrain", "create"].includes(workflow)) throw new Error(t("trainer.unknownWorkflow"));
   const trainAfterDraft = workflow === "train" || request.trainAfterDraft !== false;
   const skillName = request.skillName?.trim() ?? "";
   const skillBrief = request.skillBrief?.trim() ?? "";
@@ -44,40 +46,40 @@ export function normalizeRequest(request: TrainRequest): NormalizedTrain {
   const targetModel = request.targetModel.trim();
   const optimizerModel = request.optimizerModel.trim() || targetModel;
   if (!skillPath) {
-    throw new Error(workflow === "create" ? "Wähle den Zielordner für den neuen Skill." : "Wähle einen Skill-Ordner oder eine SKILL.md.");
+    throw new Error(workflow === "create" ? t("trainer.chooseDestination") : t("trainer.chooseSkill"));
   }
   if (workflow === "create" && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skillName)) {
-    throw new Error("Der Skill-Name muss aus Kleinbuchstaben, Ziffern und einzelnen Bindestrichen bestehen.");
+    throw new Error(t("trainer.invalidSkillName"));
   }
-  if (workflow !== "train" && !skillBrief) throw new Error("Beschreibe den Skill und die gewünschten Änderungen.");
+  if (workflow !== "train" && !skillBrief) throw new Error(t("trainer.describeSkill"));
   if (trainAfterDraft) {
-    if (!workspacePath) throw new Error("Wähle den Projektordner.");
-    if (!auftrag) throw new Error("Der Auftrag fehlt.");
+    if (!workspacePath) throw new Error(t("trainer.chooseProject"));
+    if (!auftrag) throw new Error(t("trainer.missingTask"));
     if (verifyMode === "command" && !verifyCommand) {
-      throw new Error("Der Prüfbefehl fehlt. Ohne ihn kann das Gate Erfolg nicht von einer Behauptung unterscheiden.");
+      throw new Error(t("trainer.missingCheck"));
     }
-    if (!targetModel) throw new Error("Wähle das Zielmodell.");
+    if (!targetModel) throw new Error(t("trainer.chooseTarget"));
   }
-  if (!optimizerModel) throw new Error("Wähle das Optimierermodell.");
+  if (!optimizerModel) throw new Error(t("trainer.chooseOptimizer"));
 
-  const steps = positiveInt(request.steps, "Schritte");
-  const trainBatch = positiveInt(request.trainBatch, "Trainingsläufe");
-  const selectionRepeats = positiveInt(request.selectionRepeats, "Gate-Läufe");
-  const concurrency = positiveInt(request.concurrency, "Parallelität");
-  const learningRate = positiveInt(request.learningRate, "Lernrate");
-  const attemptTimeoutMin = positiveInt(request.attemptTimeoutMin, "Lauf-Zeitlimit");
-  const verifyTimeoutSec = positiveInt(request.verifyTimeoutSec, "Prüf-Zeitlimit");
-  const budget = normalizeBudget(request.budget);
-  const runBudget = request.runBudget === null ? null : positiveInt(request.runBudget ?? 48, "Laufbudget");
+  const steps = positiveInt(request.steps, t("trainer.steps"), t);
+  const trainBatch = positiveInt(request.trainBatch, t("trainer.trainingRuns"), t);
+  const selectionRepeats = positiveInt(request.selectionRepeats, t("trainer.gateRuns"), t);
+  const concurrency = positiveInt(request.concurrency, t("trainer.concurrency"), t);
+  const learningRate = positiveInt(request.learningRate, t("trainer.learningRate"), t);
+  const attemptTimeoutMin = positiveInt(request.attemptTimeoutMin, t("trainer.attemptTimeout"), t);
+  const verifyTimeoutSec = positiveInt(request.verifyTimeoutSec, t("trainer.verifyTimeout"), t);
+  const budget = normalizeBudget(request.budget, t);
+  const runBudget = request.runBudget === null ? null : positiveInt(request.runBudget ?? 48, t("trainer.runBudget"), t);
   const extras = extraLines(request.extraTasks ?? "");
   const estimate = trainAfterDraft
     ? estimateRuns({ steps, trainBatch, selectionRepeats, slowUpdate: Boolean(request.slowUpdate) })
     : { attempts: 0, optimizer: 0 };
   const calls = estimate.attempts + estimate.optimizer
     + (trainAfterDraft && verifyMode === "agent" ? 1 : 0) + (workflow !== "train" ? 1 : 0);
-  if (!Number.isSafeInteger(calls)) throw new Error("Die Anzahl der Agent-Läufe ist zu groß.");
+  if (!Number.isSafeInteger(calls)) throw new Error(t("trainer.tooManyRuns"));
   if (runBudget !== null && calls > runBudget) {
-    throw new Error(`Das wären bis zu ${calls} Agent-Läufe. Erhöhe das Laufbudget (${runBudget}), hebe es auf oder senke Schritte, Batch und Gate-Wiederholungen.`);
+    throw new Error(t("trainer.budgetExceeded", { calls, budget: runBudget }));
   }
 
   return {
@@ -93,18 +95,18 @@ export function normalizeRequest(request: TrainRequest): NormalizedTrain {
   };
 }
 
-function positiveInt(value: number, label: string): number {
-  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} muss eine positive ganze Zahl sein.`);
+function positiveInt(value: number, label: string, t: Translate): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(t("trainer.positiveInteger", { label }));
   return value;
 }
 
-function normalizeBudget(value: OptimizerBudget | undefined): OptimizerBudget {
+function normalizeBudget(value: OptimizerBudget | undefined, t: Translate): OptimizerBudget {
   const budget = { ...DEFAULT_BUDGET, ...value };
   return {
     unlimited: budget.unlimited === true,
-    maxEditChars: positiveInt(budget.maxEditChars, "Zeichen pro Text-Edit"),
-    maxAddedChars: positiveInt(budget.maxAddedChars, "Neue Zeichen pro Schritt"),
-    maxFileEdits: positiveInt(budget.maxFileEdits, "Datei-Edits"),
-    maxFileChars: positiveInt(budget.maxFileChars, "Zeichen pro Datei-Edit"),
+    maxEditChars: positiveInt(budget.maxEditChars, t("trainer.editChars"), t),
+    maxAddedChars: positiveInt(budget.maxAddedChars, t("trainer.addedChars"), t),
+    maxFileEdits: positiveInt(budget.maxFileEdits, t("trainer.fileEdits"), t),
+    maxFileChars: positiveInt(budget.maxFileChars, t("trainer.fileChars"), t),
   };
 }

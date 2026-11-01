@@ -1,3 +1,5 @@
+import { localizedMessage } from "../shared/localized-error";
+import { translate, type Translate } from "../shared/i18n";
 import { learningRateAt } from "../shared/estimate";
 import { aggregate, isImprovement } from "../shared/score";
 import type {
@@ -43,6 +45,7 @@ export interface ProposeCall {
 }
 
 export interface TrainerDeps {
+  translate?: Translate;
   runAttempt: (input: AttemptCall) => Promise<Trajectory>;
   propose: (input: ProposeCall) => Promise<Proposal>;
   emit: (event: TrainerEvent) => void;
@@ -70,6 +73,7 @@ export interface TrainLoopConfig {
 }
 
 export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Promise<SessionSummary> {
+  const t: Translate = deps.translate ?? ((key, values) => translate("de", key, values));
   const original = config.skill;
   let current = original;
   let currentFiles = withDocument(config.files ?? [], original);
@@ -108,8 +112,8 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
     deps.emit({
       type: "log",
       message: config.gateOnEmptyRepo
-        ? `Baseline: ${tasks.selection.length} Läufe in einem leeren Repository.`
-        : `Baseline: ${tasks.selection.length} frische Läufe des Hauptauftrags.`,
+        ? t("trainer.baselineEmpty", { count: tasks.selection.length })
+        : t("trainer.baseline", { count: tasks.selection.length }),
     });
     const baselineRuns = await batch(config, deps, tasks.selection, "baseline", current, currentFiles);
     baseline = aggregate(baselineRuns.map((run) => run.score));
@@ -118,7 +122,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
     const baselineStep: StepRecord = {
       index: 0,
       kind: "baseline",
-      reasoning: "Ausgangsskill, noch ohne Edit.",
+      reasoning: t("trainer.originalSkill"),
       applied: [],
       skipped: [],
       selectionBefore: baseline,
@@ -137,8 +141,8 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
       deps.emit({
         type: "log",
         message: config.gateOnEmptyRepo
-          ? `Schritt ${label}: ${tasks.train.length} Trainingsläufe im Projekt. Das Gate prüft danach auf einem leeren Repository.`
-          : `Schritt ${label}: ${tasks.train.length} Trainingsläufe parallel.`,
+          ? t("trainer.trainingEmpty", { step: label, count: tasks.train.length })
+          : t("trainer.training", { step: label, count: tasks.train.length }),
       });
       const trainRuns = await batch(config, deps, tasks.train, "train", current, currentFiles);
       lastTrain = trainRuns;
@@ -158,12 +162,12 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         auftrag: config.auftrag,
         signal: config.signal,
       });
-      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: rate, budget: config.budget });
+      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: rate, budget: config.budget, translate: t });
       if (report.applied.length === 0 && report.appliedFiles.length === 0) {
         const skipped: StepRecord = {
           index: step + 1,
           kind: "step",
-          reasoning: proposal.reasoning || "Keine anwendbare Änderung.",
+          reasoning: proposal.reasoning || t("trainer.noApplicableEdit"),
           applied: [],
           appliedFiles: [],
           skipped: report.skipped,
@@ -174,7 +178,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         };
         steps.push(skipped);
         deps.emit({ type: "step", step: skipped });
-        deps.emit({ type: "log", message: `Schritt ${label}: kein Edit angewendet, Gate übersprungen.` });
+        deps.emit({ type: "log", message: t("trainer.skipGate", { step: label }) });
         continue;
       }
 
@@ -182,8 +186,8 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
       deps.emit({
         type: "log",
         message: config.gateOnEmptyRepo
-          ? `Schritt ${label}: Gate mit ${tasks.selection.length} Läufen im leeren Repository.`
-          : `Schritt ${label}: Gate mit ${tasks.selection.length} frischen Läufen.`,
+          ? t("trainer.gateEmpty", { step: label, count: tasks.selection.length })
+          : t("trainer.gate", { step: label, count: tasks.selection.length }),
       });
       const before = currentScore;
       const selectionRuns = await batch(config, deps, tasks.selection, "gate", report.skill, report.files);
@@ -198,7 +202,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         bestScore = after;
         deps.emit({
           type: "log",
-          message: `Schritt ${label} übernommen: Gate ${(before.gate * 100).toFixed(1)} → ${(after.gate * 100).toFixed(1)}.`,
+          message: t("trainer.accepted", { step: label, before: (before.gate * 100).toFixed(1), after: (after.gate * 100).toFixed(1) }),
         });
       } else {
         rejected.push({
@@ -211,7 +215,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         });
         deps.emit({
           type: "log",
-          message: `Schritt ${label} verworfen: ${(after.gate * 100).toFixed(1)} liegt nicht über ${(before.gate * 100).toFixed(1)}.`,
+          message: t("trainer.rejected", { step: label, before: (before.gate * 100).toFixed(1), after: (after.gate * 100).toFixed(1) }),
         });
       }
       const record: StepRecord = {
@@ -247,13 +251,13 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         auftrag: config.auftrag,
         signal: config.signal,
       });
-      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: 1, budget: config.budget, slow: true });
+      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: 1, budget: config.budget, slow: true, translate: t });
       const candidate = report.skill;
       if (candidate === current && report.appliedFiles.length === 0) {
         const skipped: StepRecord = {
           index: config.steps + 1,
           kind: "slow",
-          reasoning: proposal.reasoning || "Slow-Update leer.",
+          reasoning: proposal.reasoning || t("trainer.emptySlow"),
           applied: [],
           skipped: report.skipped,
           selectionBefore: currentScore,
@@ -304,16 +308,16 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         deps.emit({ type: "step", step: record });
         deps.emit({
           type: "log",
-          message: accepted ? "Slow-Update übernommen." : "Slow-Update verworfen.",
+          message: accepted ? t("trainer.slowAccepted") : t("trainer.slowRejected"),
         });
       }
     }
   } catch (err) {
     if (isAbortError(err) || config.signal.aborted) {
       cancelled = true;
-      deps.emit({ type: "log", message: "Abgebrochen. Der bisher beste Skill bleibt erhalten." });
+      deps.emit({ type: "log", message: t("trainer.cancelledBest") });
     } else {
-      error = err instanceof Error ? err.message : String(err);
+      error = localizedMessage(err, t);
       deps.emit({ type: "error", message: error });
     }
   }

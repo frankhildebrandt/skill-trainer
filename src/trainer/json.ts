@@ -1,3 +1,4 @@
+import { LocalizedError } from "../shared/localized-error";
 import { firstJsonObject } from "../shared/json-object";
 import type { EditOp, FileEdit, SkillEdit } from "../shared/types";
 import { sanitizeRelative } from "./skill-bundle";
@@ -13,13 +14,13 @@ export interface Proposal {
 
 export function extractJson(text: string): unknown {
   const raw = firstJsonObject(text);
-  if (!raw) throw new Error("Die Optimierer-Antwort enthält kein vollständiges JSON-Objekt.");
+  if (!raw) throw new LocalizedError("diagnostics.noJsonObject");
   return JSON.parse(raw) as unknown;
 }
 
 export function parseProposal(value: unknown): Proposal {
   if (!value || typeof value !== "object") {
-    throw new Error("Die Optimierer-Antwort ist kein Objekt.");
+    throw new LocalizedError("diagnostics.responseNotObject");
   }
   const record = value as Record<string, unknown>;
   const reasoning = typeof record.reasoning === "string" ? record.reasoning.trim() : "";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { translate } from "../shared/i18n";
 import { applyEdits, setSlowRegion, SLOW_END, SLOW_START } from "./edits";
 
 const skill = `---
@@ -15,6 +16,25 @@ keep this lesson
 `;
 
 describe("applyEdits", () => {
+  it("localizes skipped reasons while preserving replacement text", () => {
+    const result = applyEdits("Alpha\n", [
+      { op: "replace", target: "Alpha", content: "$& Remplacement" },
+      { op: "replace", target: "missing", content: "Unchanged generated text" },
+    ], { limit: 3, translate: (key, values) => translate("fr", key, values) });
+    expect(result.skill).toBe("$& Remplacement\n");
+    expect(result.skipped[0]?.reason).toBe("Texte cible introuvable");
+    expect(result.skipped[0]?.edit.content).toBe("Unchanged generated text");
+  });
+
+  it("localizes the learning-rate limit independently of the content", () => {
+    const result = applyEdits(skill, [{ op: "append", target: "", content: "Keep this original text." }], {
+      limit: 0,
+      translate: (key, values) => translate("nl", key, values),
+    });
+    expect(result.skill).toBe(skill);
+    expect(result.skipped[0]?.reason).toBe("Leersnelheid bereikt");
+  });
+
   it("applies a unique replace and skips an ambiguous one", () => {
     const result = applyEdits(
       `${skill}\nCheck the log.\nCheck the log.\n`,

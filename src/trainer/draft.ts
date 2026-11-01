@@ -1,3 +1,4 @@
+import { translate, type Locale, type Translate } from "../shared/i18n";
 import type { SkillDraft, TrainerEvent } from "../shared/types";
 import { applyProposal } from "./candidate";
 import type { NormalizedTrain } from "./config";
@@ -13,8 +14,10 @@ export async function prepareSkillDraft(
   signal: AbortSignal,
   propose: TrainerDeps["propose"],
   emit: (event: TrainerEvent) => void,
+  locale: Locale = "de",
 ): Promise<SkillDraft> {
-  if (config.workflow === "train") throw new Error("Fine-Tuning benötigt keinen Entwurf.");
+  const t: Translate = (key, values) => translate(locale, key, values);
+  if (config.workflow === "train") throw new Error(t("trainer.noDraftNeeded"));
   throwIfAborted(signal);
   emit({ type: "phase", phase: config.workflow });
   const skill = config.workflow === "create"
@@ -26,16 +29,16 @@ export async function prepareSkillDraft(
     emptyGate: config.gateOnEmptyRepo, skillScope: config.skillScope, auftrag: config.auftrag, signal,
   });
   throwIfAborted(signal);
-  const candidate = applyProposal({ skill, files: bundle.files, proposal, learningRate: config.learningRate, budget: config.budget });
+  const candidate = applyProposal({ skill, files: bundle.files, proposal, learningRate: config.learningRate, budget: config.budget, translate: t });
   if (sameBundle(skill, candidate.skill, bundle.files.length ? bundle.files : [{ path: "SKILL.md", text: skill }], candidate.files)) {
-    throw new Error("Der Optimierer hat keinen geänderten Skill-Entwurf geliefert. Prüfe Beschreibung und Edit-Budget.");
+    throw new Error(t("trainer.unchangedDraft"));
   }
   if (!frontmatterName(candidate.skill) || !/^description:\s*\S.*$/m.test(candidate.skill.split(/\r?\n---/)[0] ?? "")) {
-    throw new Error("Der Skill-Entwurf braucht YAML-Frontmatter mit name und description.");
+    throw new Error(t("trainer.draftFrontmatter"));
   }
   for (const skipped of candidate.skipped) {
-    emit({ type: "log", message: `Entwurf: Änderung übersprungen (${skipped.reason}).` });
+    emit({ type: "log", message: t("trainer.draftSkipped", { reason: skipped.reason }) });
   }
-  emit({ type: "log", message: `${config.workflow === "create" ? "Neuer Skill" : "Vortraining"}: Entwurf mit ${candidate.files.length} Dateien vorbereitet. Die Qualität wurde noch nicht durch das Gate gemessen.` });
+  emit({ type: "log", message: t("trainer.draftReady", { workflow: t(config.workflow === "create" ? "trainer.newSkill" : "trainer.pretraining"), count: candidate.files.length }) });
   return { kind: config.workflow, reasoning: proposal.reasoning, skill: candidate.skill, files: candidate.files };
 }

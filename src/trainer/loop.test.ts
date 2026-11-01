@@ -1,3 +1,4 @@
+import { translate } from "../shared/i18n";
 import { describe, expect, it } from "vitest";
 import type { Trajectory } from "../shared/types";
 import type { Proposal } from "./json";
@@ -37,6 +38,22 @@ describe("trainSkill", () => {
     expect(summary.steps.filter((step) => step.accepted)).toHaveLength(1);
     expect(summary.rejected).toHaveLength(1);
     expect(seen.filter((phase) => phase === "gate")).toHaveLength(4);
+  });
+
+  it("localizes training and gate messages while preserving generated content", async () => {
+    const logs: string[] = [];
+    const reasoning = "Run the documented test command.";
+    const summary = await trainSkill(baseConfig({ slowUpdate: false, steps: 1 }), {
+      translate: (key, values) => translate("fr", key, values),
+      emit: (event) => { if (event.type === "log") logs.push(event.message); },
+      propose: async () => ({ reasoning, slow: null, edits: [{ op: "append", target: "", content: MAGIC }] }),
+      runAttempt: async (input) => trajectory(input, input.skill.includes(MAGIC)),
+    });
+    expect(logs[0]).toBe("Référence : 2 nouvelles exécutions de la tâche principale.");
+    expect(logs.some((message) => message.includes("Étape 1 : validation avec 2 nouvelles exécutions."))).toBe(true);
+    expect(logs.some((message) => message.startsWith("Étape 1 acceptée"))).toBe(true);
+    expect(summary.bestSkill).toContain(MAGIC);
+    expect(summary.steps[1].reasoning).toBe(reasoning);
   });
 
   it("accepts a slow update only when the held-out score rises", async () => {
