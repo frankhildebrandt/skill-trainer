@@ -54,13 +54,16 @@ it("counts optimizer and check-author calls in the scheduled run budget", () => 
   expect(() => normalizeRequest(request({ runBudget: 3, verifyMode: "agent" }))).toThrow(/5 Agent-Läufe/);
 });
 
-it("allows standalone create and pretraining without a project or test command", () => {
+it("requires a project for standalone create and pretraining, but not a test command", () => {
   const draft = request({ workflow: "create", skillName: "new-skill", skillBrief: "Create a reusable helper.", trainAfterDraft: false, workspacePath: "", auftrag: "", verifyCommand: "" });
-  expect(normalizeRequest(draft).workflow).toBe("create");
-  expect(normalizeRequest({ ...draft, workflow: "pretrain" }).trainAfterDraft).toBe(false);
-  expect(() => normalizeRequest({ ...draft, trainAfterDraft: true })).toThrow(/Projektordner/);
-  expect(() => normalizeRequest({ ...draft, skillName: "../escape" })).toThrow(/Skill-Name/);
-  expect(() => normalizeRequest({ ...draft, skillBrief: "" })).toThrow(/Beschreibe/);
+  expect(() => normalizeRequest(draft)).toThrow(/Projektordner/);
+  const ready = normalizeRequest({ ...draft, workspacePath: "/tmp/project" });
+  expect(ready.workflow).toBe("create");
+  expect(ready.workspacePath).toBe("/tmp/project");
+  expect(normalizeRequest({ ...draft, workflow: "pretrain", workspacePath: "/tmp/project" }).trainAfterDraft).toBe(false);
+  expect(() => normalizeRequest({ ...draft, trainAfterDraft: true, workspacePath: "/tmp/project" })).toThrow(/Auftrag fehlt/);
+  expect(() => normalizeRequest({ ...draft, skillName: "../escape", workspacePath: "/tmp/project" })).toThrow(/Skill-Name/);
+  expect(() => normalizeRequest({ ...draft, skillBrief: "", workspacePath: "/tmp/project" })).toThrow(/Beschreibe/);
 });
 
 it("preserves explicit edit budgets and rejects invalid numeric limits", () => {

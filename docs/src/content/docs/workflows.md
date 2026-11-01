@@ -19,10 +19,11 @@ Unter **Ziel → In eigenen Worten** kannst du zusätzlich beschreiben, worauf d
 
 Wähle Vortraining, wenn du einen vorhandenen Skill anhand einer Beschreibung neu ordnen, erweitern oder überarbeiten möchtest.
 
-1. Wähle den vorhandenen Skill-Ordner.
-2. Beschreibe unter **Ziel des Vortrainings** die Einsatzfälle und gewünschten Änderungen.
-3. Wähle den **Optimierer** und passende Edit-Budgets.
-4. Entscheide, ob **Anschließend Fine-Tuning** eingeschaltet bleibt.
+1. Wähle den **Projektordner**. Der Optimierer liest diese Codebase, bevor er den Skill entwirft.
+2. Wähle den vorhandenen Skill-Ordner.
+3. Beschreibe unter **Ziel des Vortrainings** die Einsatzfälle und gewünschten Änderungen.
+4. Wähle den **Optimierer** und passende Edit-Budgets.
+5. Entscheide, ob **Anschließend Fine-Tuning** eingeschaltet bleibt.
 
 Der Optimierer darf `SKILL.md`, Referenzen und Skripte bearbeiten. Der Entwurf wird auf anwendbare Änderungen und erforderliches Frontmatter geprüft, aber zunächst **ohne Leistungsgate** in die Sitzung übernommen.
 
@@ -38,16 +39,17 @@ Wähle Create Skill, wenn du noch keinen Skill hast.
 
 1. Vergib einen **Skill-Name**, etwa `typescript-tests`. Erlaubt sind Kleinbuchstaben und Ziffern mit einzelnen Bindestrichen zwischen den Teilen.
 2. Wähle einen **neuen Skill-Ordner**. Der Zielordner darf noch nicht existieren.
-3. Formuliere unter **Skill beschreiben** den Zweck, die Auslöser, den gewünschten Ablauf sowie benötigte Referenzen und Skripte.
-4. Wähle Optimierer, Budgets und gegebenenfalls das anschließende Fine-Tuning.
+3. Wähle den **Projektordner**. Der Optimierer liest diese Codebase, bevor er den Skill entwirft. Der Ordner selbst bleibt unverändert.
+4. Formuliere unter **Skill beschreiben** den Zweck, die Auslöser, den gewünschten Ablauf sowie benötigte Referenzen und Skripte.
+5. Wähle Optimierer, Budgets und gegebenenfalls das anschließende Fine-Tuning.
 
 Der Optimierer erstellt eine `SKILL.md` mit `name` und `description` im YAML-Frontmatter und kann Begleitdateien hinzufügen. Der Zielordner entsteht erst, wenn du das Ergebnis übernimmst.
 
 ## „Anschließend Fine-Tuning“
 
-Der Schalter ist bei Vortraining und Create Skill standardmäßig **an**. Dann musst du zusätzlich Projekt, Trainingsauftrag, Prüfung und Zielmodell konfigurieren.
+Der Schalter ist bei Vortraining und Create Skill standardmäßig **an**. Dann musst du zusätzlich Trainingsauftrag, Prüfung und Zielmodell konfigurieren. Den Projektordner hast du für den Entwurf schon gewählt.
 
-Schaltest du ihn aus, wird nur ein Entwurf erstellt. Die projektbezogenen Trainingsfelder verschwinden. Du benötigst dann weder Projektordner noch Trainingsauftrag oder Prüfbefehl. Der Bericht bezeichnet das Ergebnis als **Entwurf vorbereitet · ungemessen**.
+Schaltest du ihn aus, wird nur ein Entwurf erstellt. Trainingsauftrag, Prüfung und Zielmodell verschwinden. Der Projektordner bleibt erforderlich, weil der Entwurf die Codebase zuerst liest. Der Bericht bezeichnet das Ergebnis als **Entwurf vorbereitet · ungemessen**.
 
 Ein bereits vorbereiteter Entwurf bleibt erhalten, wenn eine spätere Vorprüfung fehlschlägt oder du das anschließende Training abbrichst. Du kannst ihn prüfen, speichern und später in einem eigenen Fine-Tuning messen.
 

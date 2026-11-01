@@ -16,7 +16,8 @@ const de = {
   "runner.chooseSkill": "Zuerst einen Skill wählen.",
   "runner.noModel": "Kein Modell gewählt.",
   "runner.readingSkill": "{model} liest den Skill.",
-  "runner.fieldsFilled": "Ziel und Auftrag stehen in den Feldern."
+  "runner.fieldsFilled": "Ziel und Auftrag stehen in den Feldern.",
+  "runner.unreadCodebase": "Die Codebase wurde noch nicht gelesen."
 };
 
 export const runnerMessages = {
@@ -37,7 +38,8 @@ export const runnerMessages = {
   "runner.chooseSkill": "Choose a skill first.",
   "runner.noModel": "No model selected.",
   "runner.readingSkill": "{model} is reading the skill.",
-  "runner.fieldsFilled": "The goal and task fields have been filled."
+  "runner.fieldsFilled": "The goal and task fields have been filled.",
+  "runner.unreadCodebase": "The codebase has not been read yet."
 },
   fr: {
   "runner.retryConnection": "La connexion est bloquée. Nouvelle tentative.",
@@ -55,7 +57,8 @@ export const runnerMessages = {
   "runner.chooseSkill": "Choisissez d’abord un skill.",
   "runner.noModel": "Aucun modèle sélectionné.",
   "runner.readingSkill": "{model} lit le skill.",
-  "runner.fieldsFilled": "Les champs objectif et tâche ont été remplis."
+  "runner.fieldsFilled": "Les champs objectif et tâche ont été remplis.",
+  "runner.unreadCodebase": "La base de code n’a pas encore été lue."
 },
   it: {
   "runner.retryConnection": "Connessione bloccata. Nuovo tentativo.",
@@ -73,7 +76,8 @@ export const runnerMessages = {
   "runner.chooseSkill": "Scegli prima uno skill.",
   "runner.noModel": "Nessun modello selezionato.",
   "runner.readingSkill": "{model} sta leggendo lo skill.",
-  "runner.fieldsFilled": "I campi obiettivo e compito sono stati compilati."
+  "runner.fieldsFilled": "I campi obiettivo e compito sono stati compilati.",
+  "runner.unreadCodebase": "La codebase non è ancora stata letta."
 },
   es: {
   "runner.retryConnection": "La conexión se ha bloqueado. Reintentando.",
@@ -91,7 +95,8 @@ export const runnerMessages = {
   "runner.chooseSkill": "Primero elige un skill.",
   "runner.noModel": "No se ha seleccionado ningún modelo.",
   "runner.readingSkill": "{model} está leyendo el skill.",
-  "runner.fieldsFilled": "Se han rellenado los campos de objetivo y tarea."
+  "runner.fieldsFilled": "Se han rellenado los campos de objetivo y tarea.",
+  "runner.unreadCodebase": "El código aún no se ha leído."
 },
   nl: {
   "runner.retryConnection": "Verbinding vastgelopen. Opnieuw proberen.",
@@ -109,6 +114,7 @@ export const runnerMessages = {
   "runner.chooseSkill": "Kies eerst een skill.",
   "runner.noModel": "Geen model geselecteerd.",
   "runner.readingSkill": "{model} leest de skill.",
-  "runner.fieldsFilled": "De velden voor doel en opdracht zijn ingevuld."
+  "runner.fieldsFilled": "De velden voor doel en opdracht zijn ingevuld.",
+  "runner.unreadCodebase": "De codebase is nog niet gelezen."
 }
 } satisfies Translations<typeof de>;

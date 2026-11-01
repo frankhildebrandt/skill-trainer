@@ -9,7 +9,7 @@ import { trainSkill } from "./loop";
 const document = "---\nname: parser-helper\ndescription: Handle parser tasks.\n---\n\n# Parser\nUse the helper.\n";
 const request: TrainRequest = {
   workflow: "create", skillName: "parser-helper", skillBrief: "Build a parser helper with executable scripts.",
-  trainAfterDraft: false, skillPath: "/tmp/new-skill", workspacePath: "", auftrag: "", extraTasks: "",
+  trainAfterDraft: false, skillPath: "/tmp/new-skill", workspacePath: "/tmp/project", auftrag: "", extraTasks: "",
   targetModel: "", optimizerModel: "composer-2.5", verifyMode: "command", verifyCommand: "",
   steps: 1, trainBatch: 1, selectionRepeats: 1, concurrency: 1, learningRate: 3,
   slowUpdate: false, gateOnEmptyRepo: false, attemptTimeoutMin: 12, verifyTimeoutSec: 180,
@@ -23,13 +23,13 @@ const proposal: Proposal = {
 };
 
 describe("skill drafting", () => {
-  it("creates a complete draft without requiring a project or grading command", async () => {
+  it("creates a complete draft from the project without a grading command", async () => {
     const propose = vi.fn(async () => proposal);
     const draft = await prepareSkillDraft(normalizeRequest(request), { root: "/tmp/new-skill", document: "", files: [], name: "parser-helper" }, new AbortController().signal, propose, () => undefined);
     expect(draft.kind).toBe("create");
     expect(draft.skill).toBe(document);
     expect(draft.files.find((file) => file.path === "scripts/parse.sh")?.executable).toBe(true);
-    expect(propose.mock.calls).toHaveLength(1);
+    expect(propose).toHaveBeenCalledWith(expect.objectContaining({ kind: "create", workspacePath: "/tmp/project" }));
   });
 
   it("localizes draft notices without translating the generated skill", async () => {

@@ -51,6 +51,7 @@ beforeEach(async () => {
   mocks.saveDialog.mockReset();
   mocks.languages = ["de-CH"];
   events.length = 0;
+  await fs.mkdir(path.join(root, "project"), { recursive: true });
   registerBackend();
   await mocks.handlers.get("locale:load")!();
   attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send: (_name: string, event: SessionEvent) => events.push(event) } } as never);
@@ -60,7 +61,7 @@ afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
 
 function request(overrides: Partial<TrainRequest> = {}): TrainRequest {
   return { workflow: "create", trainAfterDraft: false, skillName: "parser-helper", skillBrief: "Prepare parser procedures.",
-    skillPath: path.join(root, "new-skill"), workspacePath: "", auftrag: "", extraTasks: "", verifyMode: "command", verifyCommand: "",
+    skillPath: path.join(root, "new-skill"), workspacePath: path.join(root, "project"), auftrag: "", extraTasks: "", verifyMode: "command", verifyCommand: "",
     targetModel: "composer-2.5", optimizerModel: "composer-2.5", steps: 1, trainBatch: 1, selectionRepeats: 1, concurrency: 1,
     learningRate: 3, slowUpdate: false, gateOnEmptyRepo: false, attemptTimeoutMin: 12, verifyTimeoutSec: 180, ...overrides };
 }
@@ -113,7 +114,6 @@ describe("skill workflow IPC", () => {
 
   it("retains a completed draft when the later training preflight fails", async () => {
     const workspacePath = path.join(root, "project");
-    await fs.mkdir(workspacePath);
     mocks.propose.mockResolvedValue(proposal());
     mocks.verify.mockResolvedValue({ exitCode: 0, output: "already green" });
     await start(request({ trainAfterDraft: true, workspacePath, auftrag: "Implement the parser.", verifyCommand: "npm test" }));
@@ -125,7 +125,6 @@ describe("skill workflow IPC", () => {
 
   it("uses the draft as the fine-tuning baseline and saves the gated winner", async () => {
     const workspacePath = path.join(root, "project");
-    await fs.mkdir(workspacePath);
     mocks.propose.mockResolvedValueOnce(proposal()).mockResolvedValueOnce({ reasoning: "Use the documented command.", slow: null,
       edits: [{ op: "append", target: "", content: "Run npm test before editing." }], files: [] });
     mocks.verify.mockResolvedValue({ exitCode: 1, output: "not done yet" });
