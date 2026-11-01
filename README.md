@@ -24,7 +24,7 @@ Alle Änderungen bleiben zunächst in der Sitzung. **Änderungen übernehmen** e
 
 1. Vorprüfung. Der Prüfbefehl muss auf einer frischen Kopie noch fehlschlagen. Sonst kann das Gate einen besseren Skill nicht vom Nichtstun unterscheiden. Wenn der Agent das Testskript schreibt, liegt es unter `.skill-trainer/checks/run.sh`. Nur dieser Ordner wird übernommen und vor jeder Bewertung wiederhergestellt.
 2. Baseline. Der aktuelle Skill läuft mehrfach auf dem Hauptauftrag.
-3. Training. Weitere Läufe, parallel, jeder in einer eigenen Git-Worktree-Kopie. Uncommittete Dateien werden mitgenommen. `node_modules`, `.venv` und `venv` werden per `cp -c` kopiert, nicht verlinkt.
+3. Training. Weitere Läufe, parallel, jeder in einer eigenen Kopie des Arbeitsbaums. Die Kopie bekommt ein neues Git und ist kein Worktree des Projekts. Der Originalordner wird nur gelesen. Uncommittete Dateien werden mitgenommen. `node_modules`, `.venv` und `venv` werden per `cp -c` kopiert, nicht verlinkt.
 4. Reflexion. Fehlschläge und Treffer gehen getrennt an einen zweiten Cursor-Agenten. Der schlägt Änderungen am gesamten Skill-Ordner vor. Die eingestellten Budgets gelten, sofern sie nicht aufgehoben wurden.
 5. Gate. Dieselben frischen Wiederholungen des Hauptauftrags, mit der Kandidatenfassung. Übernommen nur bei striktem Anstieg.
 6. Verworfene Edits bleiben als Negativbeispiel für den nächsten Vorschlag. Ein Slow-Update am Ende darf eine dauerhafte Notiz ergänzen, wieder nur nach Gate. Auch dieser Bereich darf vom Optimierer überarbeitet werden.
@@ -35,7 +35,7 @@ Zusätzliche Aufträge (eine Zeile pro Variante) werden nur zum Lernen benutzt. 
 
 Mit „Gate auf leerem Repository“ laufen Training, Baseline und Gate in einem neuen leeren Git-Repo, das nur den Skill und gegebenenfalls das Prüfskript enthält. Damit lässt sich ein Modul- oder Add-on-Skill darauf prüfen, ob er ohne den vorhandenen Code auskommt. Der Prüfbefehl muss auf dem leeren Repo rot sein. Im Projekt darf er schon grün sein. Verworfene Gate-Läufe gehen als Negativbeispiel in den nächsten Optimierer-Schritt.
 
-Die Wegwerfkopien ändern deinen Ordner nicht. Fehlgeschlagene Kopien bleiben liegen, damit du sie öffnen kannst. In den Skill-Ordner schreibt die App erst, wenn du auf „Änderungen übernehmen“ klickst, und legt vorher ein Backup daneben.
+Die Kopien ändern deinen Ordner nicht: kein Worktree, kein Commit und keine Änderung am Arbeitsbaum des Projekts. Fehlgeschlagene Kopien bleiben liegen, damit du sie öffnen kannst. In den Skill-Ordner schreibt die App erst, wenn du auf „Änderungen übernehmen“ klickst, und legt vorher ein Backup daneben.
 
 Ein Skill darf ein Ordner sein: `SKILL.md` plus Skripte, Referenzen und weitere Dateien. Die Auswahl nimmt den Ordner oder die `SKILL.md`; mitkommt der ganze Ordner außer Git-Metadaten, Abhängigkeiten und Caches. Jeder Lauf bekommt die aktuelle Fassung einschließlich neu angelegter und gelöschter Dateien. Text-Edits und Dateioperationen haben getrennt einstellbare Budgets.
 
@@ -55,6 +55,6 @@ Wenn das Fenster nicht aufgeht, weil der Electron-Download blockiert wurde: `nod
 
 Im Fenster „Mit Cursor anmelden“. Das SDK öffnet den Browser und speichert einen User-Key unter `~/.cursor/sdk/auth.json`. Alternativ reicht `CURSOR_API_KEY` in der Umgebung. Die Läufe werden wie andere Cursor-Nutzung abgerechnet.
 
-Dann Skill, Ordner und Auftrag setzen. Die Prüfung ist wählbar. Entweder gibst du den Testbefehl selbst an, zum Beispiel `npm test` oder `cargo test --quiet`. Oder der Agent schreibt vorher ein Testskript nach `.skill-trainer/checks/run.sh`; der Trainer bewertet danach jeden Lauf damit und stellt das Skript vor der Bewertung wieder her. Der Befehl muss den Auftrag wirklich prüfen, und er muss vor dem Training noch rot sein.
+Dann einen Projektordner wählen. Jede `SKILL.md` in diesem Projekt steht als Skill zur Auswahl; gibt es nur eine, ist sie schon ausgewählt. Ein Skill außerhalb des Projekts lässt sich weiter von Hand wählen. Danach Auftrag und Prüfung setzen. Die Prüfung ist wählbar. Entweder gibst du den Testbefehl selbst an, zum Beispiel `npm test` oder `cargo test --quiet`. Oder der Agent schreibt vorher ein Testskript nach `.skill-trainer/checks/run.sh`; der Trainer bewertet danach jeden Lauf damit und stellt das Skript vor der Bewertung wieder her. Der Befehl muss den Auftrag wirklich prüfen, und er muss vor dem Training noch rot sein.
 
 Sitzungen liegen unter dem Electron-User-Data-Ordner in `sessions/`.

@@ -18,6 +18,7 @@ import { readSavedSettings, writeSavedSettings } from "./settings-store";
 import { loadSkillBundle, sameBundle, writeSkillTree, type SkillBundle } from "../trainer/skill-bundle";
 import { runVerify } from "../trainer/verify";
 import { saveSkillOutput } from "../trainer/skill-output";
+import { listProjectSkills } from "../trainer/project-skills";
 import { listRepoRuns } from "../trainer/repo-runs";
 
 let windowRef: BrowserWindow | null = null;
@@ -62,6 +63,12 @@ export function registerBackend(): void {
       properties: ["openDirectory"],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle("skills:list", async (_event, workspacePath: string) => {
+    const resolved = path.resolve(String(workspacePath ?? ""));
+    const stat = await fs.stat(resolved).catch(() => null);
+    if (!stat?.isDirectory()) throw new Error("Zuerst einen Projektordner wählen.");
+    return listProjectSkills(resolved);
   });
   ipcMain.handle("dialog:skill-destination", async () => {
     const result = await dialog.showSaveDialog(dialogParent(), {
@@ -349,7 +356,7 @@ async function runPrepared(
     emit({
       type: "log",
       message: config.gateOnEmptyRepo
-        ? `Leeres Repository ist rot (Exit ${result.exitCode ?? "keins"}). Training im Projekt, Gate auf einem neuen leeren Repository.`
+        ? `Leeres Repository ist rot (Exit ${result.exitCode ?? "keins"}). Training in einer Kopie des Projekts, Gate auf einem neuen leeren Repository.`
         : `Vorprüfung fehlgeschlagen (Exit ${result.exitCode ?? "keins"}). Das ist die richtige Ausgangslage.`,
     });
   } finally {

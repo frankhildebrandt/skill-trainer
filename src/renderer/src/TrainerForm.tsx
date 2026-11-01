@@ -1,5 +1,6 @@
 import { useRef } from "react";
-import type { ModelOption, TrainRequest } from "@shared/types";
+import { matchesSkill } from "@shared/project-skill";
+import type { ModelOption, ProjectSkill, TrainRequest } from "@shared/types";
 import { BudgetFields } from "./BudgetFields";
 import { NumberField } from "./NumberField";
 
@@ -8,6 +9,8 @@ export function TrainerForm({
   running,
   models,
   skillName,
+  projectSkills,
+  skillsNote,
   onChange,
   onChooseSkill,
   onChooseDestination,
@@ -18,6 +21,8 @@ export function TrainerForm({
   running: boolean;
   models: ModelOption[];
   skillName: string | null;
+  projectSkills: ProjectSkill[];
+  skillsNote: string | null;
   onChange: (form: TrainRequest) => void;
   onChooseSkill: () => void;
   onChooseDestination: () => void;
@@ -74,16 +79,28 @@ export function TrainerForm({
             <small>Der Ordner wird beim Übernehmen des Ergebnisses erstellt.</small>
           </label>
         </>
-      ) : (
+      ) : null}
+      {fineTune ? (
         <label>
-          Skill
+          Projekt
           <div className="row">
-            <input readOnly value={form.skillPath} placeholder="Ordner oder SKILL.md" />
-            <button type="button" onClick={onChooseSkill} disabled={running}>Wählen</button>
+            <input readOnly value={form.workspacePath} placeholder="Projektordner" />
+            <button type="button" onClick={onChooseFolder} disabled={running}>Wählen</button>
           </div>
-          {skillName ? <small>{skillName}</small> : null}
+          <small>Läufe schreiben nur in eine eigene Kopie. Dieser Ordner und sein Git bleiben unverändert.</small>
         </label>
-      )}
+      ) : null}
+      {workflow !== "create" ? (
+        <SkillField
+          form={form}
+          running={running}
+          skillName={skillName}
+          projectSkills={projectSkills}
+          skillsNote={skillsNote}
+          onChange={onChange}
+          onChooseSkill={onChooseSkill}
+        />
+      ) : null}
       {draft ? (
         <>
           <label>
@@ -111,13 +128,6 @@ export function TrainerForm({
       ) : null}
       {fineTune ? (
         <>
-          <label>
-            Projekt
-            <div className="row">
-              <input readOnly value={form.workspacePath} placeholder="Projektordner" />
-              <button type="button" onClick={onChooseFolder} disabled={running}>Wählen</button>
-            </div>
-          </label>
           <div className="field">
             <div className="field-head">
               <span>Trainingsauftrag</span>
@@ -218,6 +228,51 @@ export function TrainerForm({
       {!form.budget?.unlimited ? <NumberField label="Lernrate (Text-Edits)" value={form.learningRate} disabled={running} onChange={(learningRate) => onChange({ ...form, learningRate })} /> : null}
       <BudgetFields form={form} running={running} onChange={onChange} />
     </>
+  );
+}
+
+function SkillField({
+  form,
+  running,
+  skillName,
+  projectSkills,
+  skillsNote,
+  onChange,
+  onChooseSkill,
+}: {
+  form: TrainRequest;
+  running: boolean;
+  skillName: string | null;
+  projectSkills: ProjectSkill[];
+  skillsNote: string | null;
+  onChange: (form: TrainRequest) => void;
+  onChooseSkill: () => void;
+}) {
+  const selected = projectSkills.find((skill) => matchesSkill(form.skillPath, skill.root))?.root ?? "";
+  return (
+    <label>
+      Skill
+      {form.workspacePath.trim() ? (
+        <select
+          value={selected}
+          disabled={running || projectSkills.length === 0}
+          onChange={(event) => onChange({ ...form, skillPath: event.target.value })}
+        >
+          <option value="">{projectSkills.length === 0 ? "Kein Skill im Projekt" : "Skill aus dem Projekt"}</option>
+          {projectSkills.map((skill) => (
+            <option key={skill.root} value={skill.root}>
+              {skill.name} · {skill.relative}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      <div className="row">
+        <input readOnly value={form.skillPath} placeholder="Ordner oder SKILL.md" />
+        <button type="button" onClick={onChooseSkill} disabled={running}>Wählen</button>
+      </div>
+      {skillName ? <small>{skillName}</small> : null}
+      {skillsNote ? <small>{skillsNote}</small> : null}
+    </label>
   );
 }
 

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { estimateRuns } from "@shared/estimate";
+import { skillPathForWorkspace } from "@shared/project-skill";
 import { applyRunUpdate, type RunBlock } from "@shared/run-log";
 import { changedLines } from "@shared/text-diff";
 import type {
   AuthStatus,
   ModelOption,
+  ProjectSkill,
   SessionSummary,
   SkillFile,
   StepRecord,
@@ -83,6 +85,8 @@ export function App() {
   const [form, setForm] = useState<TrainRequest>(EMPTY);
   const [settingsReady, setSettingsReady] = useState(false);
   const [skillName, setSkillName] = useState<string | null>(null);
+  const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
+  const [skillsNote, setSkillsNote] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState("bereit");
   const [runs, setRuns] = useState<LiveRun[]>([]);
@@ -116,17 +120,7 @@ export function App() {
     let cancelled = false;
     void api.loadSettings().then(async (saved) => {
       if (cancelled) return;
-      if (saved) {
-        setForm(saved);
-        if (saved.skillPath && saved.workflow !== "create") {
-          try {
-            const preview = await api.readSkill(saved.skillPath);
-            if (!cancelled) setSkillName(skillLabel(preview));
-          } catch {
-            if (!cancelled) setSkillName(null);
-          }
-        }
-      }
+      if (saved) setForm(saved);
       if (!cancelled) setSettingsReady(true);
     }).catch(() => {
       if (!cancelled) setSettingsReady(true);
@@ -143,6 +137,51 @@ export function App() {
     }, 250);
     return () => clearTimeout(timer);
   }, [api, form, settingsReady]);
+
+  useEffect(() => {
+    if (!api || !settingsReady) return;
+    const skillPath = form.skillPath.trim();
+    if (!skillPath || form.workflow === "create") {
+      setSkillName(null);
+      return;
+    }
+    let cancelled = false;
+    void api.readSkill(skillPath).then((preview) => {
+      if (!cancelled) setSkillName(skillLabel(preview));
+    }).catch(() => {
+      if (!cancelled) setSkillName(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, settingsReady, form.skillPath, form.workflow]);
+
+  useEffect(() => {
+    if (!api || !settingsReady) return;
+    const workspace = form.workspacePath.trim();
+    if (!workspace) {
+      setProjectSkills([]);
+      setSkillsNote(null);
+      return;
+    }
+    let cancelled = false;
+    void api.listProjectSkills(workspace).then((skills) => {
+      if (cancelled) return;
+      setProjectSkills(skills);
+      setSkillsNote(skills.length === 0 ? "Keine SKILL.md in diesem Projekt." : null);
+      setForm((prev) => {
+        if (prev.workflow === "create" || prev.workspacePath.trim() !== workspace || prev.skillPath.trim() || skills.length !== 1) return prev;
+        return { ...prev, skillPath: skills[0]?.root ?? prev.skillPath };
+      });
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      setProjectSkills([]);
+      setSkillsNote(messageOf(err));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, settingsReady, form.workspacePath]);
 
   useEffect(() => {
     if (!api) return;
@@ -254,15 +293,7 @@ export function App() {
 
   async function chooseSkill() {
     const picked = await api.pickSkill();
-    if (!picked) return;
-    setForm((prev) => ({ ...prev, skillPath: picked }));
-    try {
-      const preview = await api.readSkill(picked);
-      setSkillName(skillLabel(preview));
-    } catch (err) {
-      setSkillName(null);
-      pushFeed({ type: "note", text: messageOf(err) });
-    }
+    if (picked) setForm((prev) => ({ ...prev, skillPath: picked }));
   }
 
   async function chooseDestination() {
@@ -272,7 +303,21 @@ export function App() {
 
   async function chooseFolder() {
     const picked = await api.pickFolder();
-    if (picked) setForm((prev) => ({ ...prev, workspacePath: picked }));
+    if (!picked) return;
+    try {
+      const skills = await api.listProjectSkills(picked);
+      setProjectSkills(skills);
+      setSkillsNote(skills.length === 0 ? "Keine SKILL.md in diesem Projekt." : null);
+      setForm((prev) => ({
+        ...prev,
+        workspacePath: picked,
+        skillPath: prev.workflow === "create" ? prev.skillPath : skillPathForWorkspace(prev.skillPath, prev.workspacePath, skills),
+      }));
+    } catch (err) {
+      setProjectSkills([]);
+      setSkillsNote(messageOf(err));
+      setForm((prev) => ({ ...prev, workspacePath: picked }));
+    }
   }
 
   async function pickRun() {
@@ -389,6 +434,8 @@ export function App() {
               running={running}
               models={models}
               skillName={skillName}
+              projectSkills={projectSkills}
+              skillsNote={skillsNote}
               onChange={setForm}
               onChooseSkill={() => void chooseSkill()}
               onChooseDestination={() => void chooseDestination()}
@@ -445,7 +492,7 @@ export function App() {
             <div className="column">
               {feed.length === 0 ? (
                 <Empty icon={<SparkIcon />} title="Noch kein Lauf.">
-                  Skill, Projekt und Auftrag setzen, dann starten. Phasen, Agenten und Befunde erscheinen hier.
+                  Projekt wählen, den Skill daraus nehmen und den Auftrag setzen. Phasen, Agenten und Befunde erscheinen hier.
                 </Empty>
               ) : null}
               {feed.map((item) => {
