@@ -10,6 +10,11 @@
   "scripts": {
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
+    "docs:dev": "npm --prefix docs run dev",
+    "docs:check": "npm --prefix docs run check",
+    "docs:build": "npm --prefix docs run build",
+    "docs:preview": "npm --prefix docs run preview",
+    "docs:screenshots": "npm --prefix docs run screenshots",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run"
   },

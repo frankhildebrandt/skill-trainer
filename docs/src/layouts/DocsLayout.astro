@@ -1,0 +1,48 @@
+---
+import type { CollectionEntry } from "astro:content";
+import type { MarkdownHeading } from "astro";
+import BaseLayout from "./BaseLayout.astro";
+import DocNav from "../components/DocNav.astro";
+import { docUrl } from "../lib/docs";
+import "../styles/docs.css";
+
+interface Props { entry: CollectionEntry<"docs">; pages: CollectionEntry<"docs">[]; headings: MarkdownHeading[]; }
+const { entry, pages, headings } = Astro.props;
+const index = pages.findIndex((page) => page.id === entry.id);
+const previous = pages[index - 1];
+const next = pages[index + 1];
+const toc = headings.filter((heading) => heading.depth === 2);
+---
+<BaseLayout title={entry.data.title} description={entry.data.description} documentation>
+  <div class="docs-shell">
+    <aside class="docs-sidebar">
+      <a class="back-home" href="/">← Zur Produktseite</a>
+      <DocNav pages={pages} current={entry.id} />
+      <div class="sidebar-note"><span class="status-dot"></span> Dokumentation der App<span>Version 0.1 · Deutsch</span></div>
+    </aside>
+    <div class="docs-content">
+      <details class="mobile-doc-nav">
+        <summary>Seitenübersicht <span aria-hidden="true">⌄</span></summary>
+        <DocNav pages={pages} current={entry.id} />
+      </details>
+      <main id="main">
+        <header class="doc-heading">
+          <p class="eyebrow">Dokumentation <span>/</span> {entry.data.section}</p>
+          <h1>{entry.data.title}</h1>
+          <p class="doc-description">{entry.data.description}</p>
+        </header>
+        {toc.length > 0 && <details class="mobile-toc"><summary>Auf dieser Seite</summary><ul>{toc.map((heading) => <li><a href={`#${heading.slug}`}>{heading.text}</a></li>)}</ul></details>}
+        <article class="prose"><slot /></article>
+        <nav class="page-pagination" aria-label="Weitere Dokumentationsseiten">
+          {previous ? <a href={docUrl(previous.id)}><span>← Zurück</span><strong>{previous.data.title}</strong></a> : <div />}
+          {next && <a class="next" href={docUrl(next.id)}><span>Weiter →</span><strong>{next.data.title}</strong></a>}
+        </nav>
+        <a class="edit-link" href={`https://github.com/frankhildebrandt/skill-trainer/blob/main/docs/src/content/docs/${entry.id}.md`}>Diese Seite auf GitHub ansehen <span aria-hidden="true">↗</span></a>
+      </main>
+    </div>
+    <aside class="docs-toc" aria-label="Auf dieser Seite">
+      {toc.length > 0 && <><p>Auf dieser Seite</p><ul>{toc.map((heading) => <li><a href={`#${heading.slug}`}>{heading.text}</a></li>)}</ul></>}
+      <a class="toc-help" href="/docs/fehlerbehebung/">Etwas klappt nicht? <span>Zur Fehlerbehebung →</span></a>
+    </aside>
+  </div>
+</BaseLayout>

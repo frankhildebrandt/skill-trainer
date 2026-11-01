@@ -1,0 +1,19 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { docUrl, sections } from "../lib/docs";
+
+interface Props { pages: CollectionEntry<"docs">[]; current: string; }
+const { pages, current } = Astro.props;
+---
+<nav class="doc-nav" aria-label="Dokumentationsseiten">
+  {sections.map((section) => (
+    <div class="doc-nav-group">
+      <p>{section}</p>
+      <ul>
+        {pages.filter((page) => page.data.section === section).map((page) => (
+          <li><a href={docUrl(page.id)} aria-current={current === page.id ? "page" : undefined}>{page.data.title}</a></li>
+        ))}
+      </ul>
+    </div>
+  ))}
+</nav>
