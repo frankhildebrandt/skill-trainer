@@ -1,6 +1,6 @@
-import { dialog, shell, type BrowserWindow } from "electron";
-import { ipcMain, app } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell, type NativeImage } from "electron";
 import { Cursor, CursorAgentError } from "@cursor/sdk";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { AuthStatus, ModelOption, SessionSummary, SkillDraft, TrainRequest, TrainerEvent, Trajectory } from "../shared/types";
@@ -18,8 +18,13 @@ import { readSavedSettings, writeSavedSettings } from "./settings-store";
 import { loadSkillBundle, sameBundle, writeSkillTree, type SkillBundle } from "../trainer/skill-bundle";
 import { runVerify } from "../trainer/verify";
 import { saveSkillOutput } from "../trainer/skill-output";
+import { listRepoRuns } from "../trainer/repo-runs";
 
 let windowRef: BrowserWindow | null = null;
+let pickerWin: BrowserWindow | null = null;
+let pickerWorkspace = "";
+let settlePick: ((prompt: string | null) => void) | null = null;
+let pendingPick: Promise<string | null> | null = null;
 let active: AbortController | null = null;
 let lastSummary: SessionSummary | null = null;
 let lastSkillRoot: string | null = null;
@@ -110,6 +115,46 @@ export function registerBackend(): void {
   ipcMain.handle("shell:open", async (_event, target: string) => {
     const error = await shell.openPath(target);
     if (error) throw new Error(error);
+  });
+  ipcMain.handle("runs:pick", async (_event, workspacePath: string) => {
+    const resolved = path.resolve(String(workspacePath ?? ""));
+    const stat = await fs.stat(resolved).catch(() => null);
+    if (!stat?.isDirectory()) throw new Error("Zuerst einen Projektordner wählen.");
+    if (pickerWin && !pickerWin.isDestroyed() && pendingPick) {
+      pickerWin.focus();
+      return pendingPick;
+    }
+    pickerWorkspace = resolved;
+    const win = openRunPicker();
+    pendingPick = new Promise((resolve) => {
+      settlePick = (prompt) => {
+        settlePick = null;
+        pendingPick = null;
+        resolve(prompt);
+      };
+    });
+    win.on("closed", () => {
+      if (pickerWin === win) pickerWin = null;
+      settlePick?.(null);
+    });
+    return pendingPick;
+  });
+  ipcMain.handle("runs:catalog", (_event, scope: unknown) => {
+    if (!pickerWorkspace) throw new Error("Kein Projektordner.");
+    const which = scope === "local" || scope === "cloud" ? scope : "all";
+    return listRepoRuns(pickerWorkspace, undefined, which);
+  });
+  ipcMain.handle("runs:choose", (event, prompt: unknown) => {
+    const text = typeof prompt === "string" ? prompt.trim() : "";
+    if (!text) return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    settlePick?.(text);
+    if (win && !win.isDestroyed()) win.close();
+  });
+  ipcMain.handle("runs:cancel", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    settlePick?.(null);
+    if (win && !win.isDestroyed()) win.close();
   });
 }
 
@@ -476,6 +521,47 @@ function explain(err: unknown): Error {
   if (err instanceof CursorAgentError) return new Error(err.message);
   if (err instanceof Error) return err;
   return new Error(String(err));
+}
+
+function openRunPicker(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 960,
+    height: 780,
+    minWidth: 680,
+    minHeight: 520,
+    title: "Cursor-Läufe",
+    backgroundColor: "#030509",
+    icon: loadIcon(),
+    ...(process.platform === "darwin"
+      ? { titleBarStyle: "hidden" as const, trafficLightPosition: { x: 18, y: 19 } }
+      : {}),
+    webPreferences: {
+      preload: path.join(__dirname, "../preload/index.js"),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
+  });
+  pickerWin = win;
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  if (process.env.ELECTRON_RENDERER_URL) {
+    const url = new URL(process.env.ELECTRON_RENDERER_URL);
+    url.searchParams.set("picker", "runs");
+    void win.loadURL(url.toString());
+  } else {
+    void win.loadFile(path.join(__dirname, "../renderer/index.html"), { query: { picker: "runs" } });
+  }
+  return win;
+}
+
+function loadIcon(): NativeImage | undefined {
+  const file = path.join(app.getAppPath(), "resources", "icon.png");
+  if (!existsSync(file)) return undefined;
+  const image = nativeImage.createFromPath(file);
+  return image.isEmpty() ? undefined : image;
 }
 
 function dialogParent(): BrowserWindow {

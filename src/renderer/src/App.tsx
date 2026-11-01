@@ -275,6 +275,19 @@ export function App() {
     if (picked) setForm((prev) => ({ ...prev, workspacePath: picked }));
   }
 
+  async function pickRun() {
+    if (!form.workspacePath.trim()) {
+      pushFeed({ type: "note", text: "Zuerst einen Projektordner wählen." });
+      return;
+    }
+    try {
+      const prompt = await api.pickCursorRun(form.workspacePath);
+      if (prompt) setForm((prev) => ({ ...prev, auftrag: prompt }));
+    } catch (err) {
+      pushFeed({ type: "note", text: messageOf(err) });
+    }
+  }
+
   async function start() {
     setRunning(true);
     setNotice(null);
@@ -380,6 +393,7 @@ export function App() {
               onChooseSkill={() => void chooseSkill()}
               onChooseDestination={() => void chooseDestination()}
               onChooseFolder={() => void chooseFolder()}
+              onPickRun={() => void pickRun()}
             />
           </div>
           <div className="panel-foot">

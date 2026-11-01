@@ -15,6 +15,10 @@ const api: TrainerApi = {
   cancel: () => ipcRenderer.invoke("trainer:cancel"),
   writeBack: () => ipcRenderer.invoke("trainer:writeBack"),
   openPath: (target) => ipcRenderer.invoke("shell:open", target),
+  pickCursorRun: (workspacePath) => ipcRenderer.invoke("runs:pick", workspacePath),
+  listCursorRuns: (scope) => ipcRenderer.invoke("runs:catalog", scope),
+  chooseCursorRun: (prompt) => ipcRenderer.invoke("runs:choose", prompt),
+  cancelCursorRun: () => ipcRenderer.invoke("runs:cancel"),
   onEvent: (cb) => {
     const listener = (_event: IpcRendererEvent, payload: TrainerEvent) => cb(payload);
     ipcRenderer.on("trainer:event", listener);
