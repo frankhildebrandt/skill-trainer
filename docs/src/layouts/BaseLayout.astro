@@ -1,0 +1,49 @@
+---
+import Logo from "../components/Logo.astro";
+import Search from "../components/Search.astro";
+import "../styles/global.css";
+
+interface Props { title?: string; description?: string; documentation?: boolean; }
+const { title, description = "Erstelle und verbessere Cursor-Skills mit echten Aufgaben, frischen Prüfläufen und nachvollziehbaren Änderungen. Die Desktop-App für deinen Skill-Ordner.", documentation = false } = Astro.props;
+const pageTitle = title ? `${title} · Skill Trainer` : "Skill Trainer – Mach aus Erfahrung bessere Skills";
+---
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#080b12" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{pageTitle}</title>
+  </head>
+  <body class:list={[{ "docs-page": documentation }]}>
+    <a class="skip-link" href="#main">Zum Inhalt springen</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <Logo />
+        <nav class="site-nav" aria-label="Hauptnavigation">
+          <a href="/#ablauf">So funktioniert’s</a>
+          <a href="/docs/" aria-current={documentation ? "true" : undefined}>Dokumentation</a>
+          <a class="github-link" href="https://github.com/frankhildebrandt/skill-trainer" aria-label="Skill Trainer auf GitHub">GitHub <span aria-hidden="true">↗</span></a>
+        </nav>
+        {documentation ? <Search /> : <a class="button button-small" href="/docs/installation/">Loslegen <span aria-hidden="true">↗</span></a>}
+      </div>
+    </header>
+    <slot />
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div><Logo /><p>Ein besserer Ablauf beginnt mit einem besseren Skill.</p></div>
+        <nav aria-label="Fußnavigation">
+          <a href="/docs/installation/">Installation</a>
+          <a href="/docs/">Dokumentation</a>
+          <a href="https://github.com/frankhildebrandt/skill-trainer">Quellcode <span aria-hidden="true">↗</span></a>
+        </nav>
+        <span class="footer-note">Gebaut für Cursor. Eigenständiges Projekt.</span>
+      </div>
+    </footer>
+  </body>
+</html>

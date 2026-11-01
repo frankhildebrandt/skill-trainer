@@ -1,0 +1,102 @@
+<button class="search-trigger" type="button" data-search-open aria-label="Dokumentation durchsuchen">
+  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg>
+  <span>Dokumentation suchen</span><kbd>⌘ K</kbd>
+</button>
+<dialog id="doc-search" class="search-dialog" aria-labelledby="search-heading">
+  <div class="search-top">
+    <h2 id="search-heading">Dokumentation durchsuchen</h2>
+    <form method="dialog"><button class="search-close" aria-label="Suche schließen">Schließen <kbd>Esc</kbd></button></form>
+  </div>
+  <label class="sr-only" for="search-input">Suchbegriff</label>
+  <input id="search-input" type="search" placeholder="Zum Beispiel: Slow-Update oder Laufbudget" autocomplete="off" aria-describedby="search-status" />
+  <p id="search-status" role="status">Suche nach Funktionen, Einstellungen oder Anleitungen.</p>
+  <ul id="search-results" class="search-results"></ul>
+  <div class="search-help">Mit <kbd>Tab</kbd> durch die Ergebnisse · <kbd>Enter</kbd> öffnen</div>
+</dialog>
+
+<script>
+  interface SearchDocument { title: string; description: string; href: string; body: string; }
+
+  const dialog = document.querySelector<HTMLDialogElement>("#doc-search")!;
+  const input = document.querySelector<HTMLInputElement>("#search-input")!;
+  const results = document.querySelector<HTMLUListElement>("#search-results")!;
+  const status = document.querySelector<HTMLParagraphElement>("#search-status")!;
+  let documents: SearchDocument[] | undefined;
+  let loading: Promise<SearchDocument[]> | undefined;
+  let revision = 0;
+
+  function normalize(value: string): string {
+    return value.toLocaleLowerCase("de").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss");
+  }
+
+  async function loadIndex(): Promise<SearchDocument[]> {
+    if (documents) return documents;
+    loading ??= fetch("/search-index.json").then(async (response) => {
+      if (!response.ok) throw new Error("Search index unavailable");
+      return await response.json() as SearchDocument[];
+    }).catch((error: unknown) => {
+      loading = undefined;
+      throw error;
+    });
+    documents = await loading;
+    return documents;
+  }
+
+  async function search(): Promise<void> {
+    const currentRevision = ++revision;
+    const query = normalize(input.value.trim());
+    results.replaceChildren();
+    if (!query) {
+      status.textContent = "Suche nach Funktionen, Einstellungen oder Anleitungen.";
+      return;
+    }
+    status.textContent = "Dokumentation wird durchsucht …";
+    try {
+      const index = await loadIndex();
+      if (currentRevision !== revision) return;
+      const terms = query.split(/\s+/);
+      const matches = index.filter((doc) => terms.every((term) => normalize(`${doc.title} ${doc.description} ${doc.body}`).includes(term)))
+        .sort((a, b) => Number(normalize(b.title).includes(query)) - Number(normalize(a.title).includes(query)));
+      status.textContent = matches.length ? `${matches.length} ${matches.length === 1 ? "Seite gefunden" : "Seiten gefunden"}.` : "Keine Seite gefunden. Versuche einen anderen Suchbegriff.";
+      for (const doc of matches) {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        const title = document.createElement("strong");
+        const description = document.createElement("span");
+        link.href = doc.href;
+        title.textContent = doc.title;
+        description.textContent = doc.description;
+        link.append(title, description);
+        item.append(link);
+        results.append(item);
+      }
+    } catch {
+      if (currentRevision !== revision) return;
+      status.textContent = "Die Suche konnte nicht geladen werden. Nutze die Navigation oder versuche es erneut.";
+    }
+  }
+
+  function openSearch(): void {
+    if (!dialog.open) dialog.showModal();
+    input.focus();
+    void search();
+  }
+
+  document.querySelectorAll("[data-search-open]").forEach((button) => button.addEventListener("click", openSearch));
+  input.addEventListener("input", () => void search());
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      dialog.close();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    const target = event.target;
+    const editing = target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+    if ((event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) || (event.key === "/" && !editing)) {
+      event.preventDefault();
+      openSearch();
+    }
+  });
+</script>

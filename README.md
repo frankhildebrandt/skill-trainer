@@ -2,6 +2,15 @@
 
 # Skill Trainer
 
+Die Astro-Produktseite und Bedienungsdokumentation liegen unter [`docs/`](docs/README.md). Mit Node.js ab 22.23.4 lokal starten:
+
+```bash
+npm ci --prefix docs
+npm run docs:dev
+```
+
+Die Startseite stellt die App mit Screenshots vor. Unter `/docs/` folgen Einstieg, Workflows, Prüfung, Ergebnisse und eine vollständige Referenz aller Einstellungen und Schalter. `npm run docs:check` prüft die Astro-Dateien; `npm run docs:build` baut die statische Website und prüft ihre internen Links.
+
 Trainiert eine `SKILL.md` gegen einen Projektordner und einen Auftrag. Die Läufe gehen über das Cursor-SDK und damit über dein Cursor-Abo. Electron, weil das SDK in Node läuft.
 
 Das Fine-Tuning folgt [SkillOpt](https://microsoft.github.io/SkillOpt/) von Microsoft Research: der Skill-Ordner ist der trainierbare Zustand, das Modell bleibt fest. Der Optimierer kann die gesamte `SKILL.md` umschreiben, Frontmatter ändern und Referenzen oder Skripte anlegen, ändern und löschen. Eine Fine-Tuning-Fassung wird nur behalten, wenn sie auf frischen Läufen des Hauptauftrags einen höheren Gate-Score hat. Gleichstand zählt als Ablehnung.
@@ -33,7 +42,7 @@ Der Gate-Score ist zu 85 % „Prüfbefehl Exit 0“ und zu 15 % „weniger Werkz
 
 Zusätzliche Aufträge (eine Zeile pro Variante) werden nur zum Lernen benutzt. Das Gate sieht immer den Hauptauftrag.
 
-Mit „Gate auf leerem Repository“ laufen Training, Baseline und Gate in einem neuen leeren Git-Repo, das nur den Skill und gegebenenfalls das Prüfskript enthält. Damit lässt sich ein Modul- oder Add-on-Skill darauf prüfen, ob er ohne den vorhandenen Code auskommt. Der Prüfbefehl muss auf dem leeren Repo rot sein. Im Projekt darf er schon grün sein. Verworfene Gate-Läufe gehen als Negativbeispiel in den nächsten Optimierer-Schritt.
+Mit „Gate auf leerem Repository“ laufen Baseline und Gates in einem neuen leeren Git-Repo, das nur den Skill und gegebenenfalls das Prüfskript enthält. Das Training bleibt in Projektkopien. Damit lässt sich ein Modul- oder Add-on-Skill darauf prüfen, ob er ohne den vorhandenen Code auskommt. Der Prüfbefehl muss auf dem leeren Repo rot sein. Im Projekt darf er schon grün sein. Verworfene Gate-Läufe gehen als Negativbeispiel in den nächsten Optimierer-Schritt.
 
 Die Kopien ändern deinen Ordner nicht: kein Worktree, kein Commit und keine Änderung am Arbeitsbaum des Projekts. Fehlgeschlagene Kopien bleiben liegen, damit du sie öffnen kannst. In den Skill-Ordner schreibt die App erst, wenn du auf „Änderungen übernehmen“ klickst, und legt vorher ein Backup daneben.
 
@@ -53,7 +62,7 @@ npm run dev
 
 Wenn das Fenster nicht aufgeht, weil der Electron-Download blockiert wurde: `node node_modules/electron/install.js` und danach `npm run dev` noch einmal.
 
-Im Fenster „Mit Cursor anmelden“. Das SDK öffnet den Browser und speichert einen User-Key unter `~/.cursor/sdk/auth.json`. Alternativ reicht `CURSOR_API_KEY` in der Umgebung. Die Läufe werden wie andere Cursor-Nutzung abgerechnet.
+Im Fenster „Anmelden“. Das SDK öffnet den Browser und speichert einen User-Key unter `~/.cursor/sdk/auth.json`. Alternativ reicht `CURSOR_API_KEY` in der Umgebung. Die Läufe werden wie andere Cursor-Nutzung abgerechnet.
 
 Dann einen Projektordner wählen. Jede `SKILL.md` in diesem Projekt steht als Skill zur Auswahl; gibt es nur eine, ist sie schon ausgewählt. Ein Skill außerhalb des Projekts lässt sich weiter von Hand wählen. Danach Auftrag und Prüfung setzen. Die Prüfung ist wählbar. Entweder gibst du den Testbefehl selbst an, zum Beispiel `npm test` oder `cargo test --quiet`. Oder der Agent schreibt vorher ein Testskript nach `.skill-trainer/checks/run.sh`; der Trainer bewertet danach jeden Lauf damit und stellt das Skript vor der Bewertung wieder her. Der Befehl muss den Auftrag wirklich prüfen, und er muss vor dem Training noch rot sein.
 
