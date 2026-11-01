@@ -174,6 +174,11 @@ small, .estimate, .quiet { color: var(--muted); line-height: 1.4; }
 
 .actions { display: flex; gap: 0.45rem; flex-wrap: wrap; }
 
+.settings-details { font-size: 0.78rem; color: var(--muted); }
+.settings-details > summary { cursor: pointer; padding: 0.3rem 0; }
+.settings-details[open] > .grid { margin-top: 0.35rem; }
+.budget-error { margin: 0; color: var(--bad); font-size: 0.82rem; line-height: 1.4; }
+
 .tabs {
   flex-shrink: 0;
   display: flex;

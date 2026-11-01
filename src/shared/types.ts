@@ -40,14 +40,16 @@ export interface SkillFile {
   path: string;
   text?: string;
   base64?: string;
+  executable?: boolean;
 }
 
 export interface FileEdit {
-  op: "write" | "replace";
+  op: "write" | "replace" | "delete";
   path: string;
   content: string;
   target?: string;
   why?: string;
+  executable?: boolean;
 }
 
 export type AttemptGround = "repo" | "empty";
@@ -90,6 +92,9 @@ export interface Rejection {
 }
 
 export interface SessionSummary {
+  workflow?: SkillWorkflow;
+  draft?: SkillDraft;
+  fineTuned?: boolean;
   originalSkill: string;
   bestSkill: string;
   originalFiles?: SkillFile[];
@@ -108,7 +113,31 @@ export type VerifyMode = "command" | "agent";
 /** `general`: reusable procedure. `specific`: this assignment may be written into the skill. */
 export type SkillScope = "general" | "specific";
 
+export type SkillWorkflow = "train" | "pretrain" | "create";
+
+export interface OptimizerBudget {
+  unlimited: boolean;
+  maxEditChars: number;
+  maxAddedChars: number;
+  maxFileEdits: number;
+  maxFileChars: number;
+}
+
+export interface SkillDraft {
+  kind: "pretrain" | "create";
+  reasoning: string;
+  skill: string;
+  files: SkillFile[];
+}
+
 export interface TrainRequest {
+  workflow?: SkillWorkflow;
+  skillName?: string;
+  skillBrief?: string;
+  trainAfterDraft?: boolean;
+  budget?: OptimizerBudget;
+  /** null disables the run-count cap; finite sessions still use steps and batches. */
+  runBudget?: number | null;
   skillPath: string;
   workspacePath: string;
   auftrag: string;
@@ -159,6 +188,7 @@ export interface TrainerApi {
   authLogin: () => Promise<AuthStatus>;
   listModels: () => Promise<{ models: ModelOption[]; error?: string }>;
   pickSkill: () => Promise<string | null>;
+  pickSkillDestination: () => Promise<string | null>;
   pickFolder: () => Promise<string | null>;
   readSkill: (skillPath: string) => Promise<{
     name: string;
@@ -172,7 +202,7 @@ export interface TrainerApi {
   saveSettings: (request: TrainRequest) => Promise<void>;
   start: (request: TrainRequest) => Promise<{ sessionDir: string }>;
   cancel: () => Promise<void>;
-  writeBack: () => Promise<{ backupPath: string; skillPath: string }>;
+  writeBack: () => Promise<{ backupPath: string | null; skillPath: string }>;
   openPath: (target: string) => Promise<void>;
   onEvent: (cb: (event: TrainerEvent) => void) => () => void;
 }

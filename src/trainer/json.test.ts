@@ -21,4 +21,19 @@ describe("parseProposal", () => {
     ]);
     expect(parsed.files).toEqual([]);
   });
+
+  it("parses full rewrites, executable scripts, and companion deletions", () => {
+    const result = parseProposal({ files: [
+      { op: "write", path: "SKILL.md", content: "# New skill" },
+      { op: "write", path: "scripts/run.sh", content: "#!/bin/sh\necho ok", executable: true },
+      { op: "delete", path: "references/old.md" },
+      { op: "write", path: "../escape", content: "bad" },
+      { op: "write", path: "C:\\escape", content: "bad" },
+      { op: "write", path: ".git/config", content: "bad" },
+    ] });
+    expect(result.files).toHaveLength(3);
+    expect(result.files?.[0]).toMatchObject({ op: "write", path: "SKILL.md" });
+    expect(result.files?.[1]).toMatchObject({ executable: true });
+    expect(result.files?.[2]).toMatchObject({ op: "delete", path: "references/old.md", content: "" });
+  });
 });

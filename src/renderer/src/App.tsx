@@ -12,6 +12,8 @@ import type {
   Trajectory,
 } from "@shared/types";
 import { MarkdownView } from "./MarkdownView";
+import { TrainerForm } from "./TrainerForm";
+import { bundleChanged, measuredImprovement, reportBody, resultTitle } from "./report";
 
 interface LiveRun {
   runId: string;
@@ -34,6 +36,11 @@ type FeedItem =
   | { id: number; type: "report" };
 
 const EMPTY: TrainRequest = {
+  workflow: "train",
+  skillName: "",
+  skillBrief: "",
+  trainAfterDraft: true,
+  runBudget: 48,
   skillPath: "",
   workspacePath: "",
   auftrag: "",
@@ -94,7 +101,7 @@ export function App() {
       if (cancelled) return;
       if (saved) {
         setForm(saved);
-        if (saved.skillPath) {
+        if (saved.skillPath && saved.workflow !== "create") {
           try {
             const preview = await api.readSkill(saved.skillPath);
             if (!cancelled) setSkillName(skillLabel(preview));
@@ -200,16 +207,14 @@ export function App() {
     return () => clearInterval(timer);
   }, [anyLive]);
 
-  const estimate = useMemo(
-    () =>
-      estimateRuns({
-        steps: form.steps,
-        trainBatch: form.trainBatch,
-        selectionRepeats: form.selectionRepeats,
-        slowUpdate: form.slowUpdate,
-      }),
-    [form.steps, form.trainBatch, form.selectionRepeats, form.slowUpdate],
-  );
+  const hasDraft = form.workflow === "create" || form.workflow === "pretrain";
+  const fineTune = !hasDraft || form.trainAfterDraft !== false;
+  const estimate = useMemo(() => {
+    const train = fineTune ? estimateRuns(form) : { attempts: 0, optimizer: 0 };
+    const checks = fineTune && form.verifyMode === "agent" ? 1 : 0;
+    const optimizer = train.optimizer + (hasDraft ? 1 : 0);
+    return { attempts: train.attempts, checks, optimizer, total: train.attempts + checks + optimizer };
+  }, [fineTune, hasDraft, form.steps, form.trainBatch, form.selectionRepeats, form.slowUpdate, form.verifyMode]);
 
   if (!api) {
     return <main className="fallback">Skill Trainer läuft nur in der Electron-App.</main>;
@@ -238,6 +243,11 @@ export function App() {
       setSkillName(null);
       pushFeed({ type: "note", text: messageOf(err) });
     }
+  }
+
+  async function chooseDestination() {
+    const picked = await api.pickSkillDestination();
+    if (picked) setForm((prev) => ({ ...prev, skillPath: picked }));
   }
 
   async function chooseFolder() {
@@ -270,7 +280,7 @@ export function App() {
     setNotice(null);
     try {
       const result = await api.writeBack();
-      setNotice(`Übernommen nach ${result.skillPath}. Backup: ${result.backupPath}`);
+      setNotice(`Übernommen nach ${result.skillPath}.${result.backupPath ? ` Backup: ${result.backupPath}` : ""}`);
     } catch (err) {
       setNotice(messageOf(err));
     }
@@ -293,7 +303,6 @@ export function App() {
 
   const improved = summary ? bundleChanged(summary) : false;
   const activeRun = runs.find((run) => run.runId === active);
-  const runCount = estimate.attempts + (form.verifyMode === "agent" ? 1 : 0);
 
   return (
     <div className="app">
@@ -316,159 +325,23 @@ export function App() {
             void start();
           }}
         >
-          <label>
-            Skill
-            <div className="row">
-              <input readOnly value={form.skillPath} placeholder="Ordner oder SKILL.md" />
-              <button type="button" onClick={() => void chooseSkill()} disabled={running}>
-                Wählen
-              </button>
-            </div>
-            {skillName ? <small>{skillName}</small> : null}
-          </label>
-
-          <label>
-            Projekt
-            <div className="row">
-              <input readOnly value={form.workspacePath} placeholder="Projektordner" />
-              <button type="button" onClick={() => void chooseFolder()} disabled={running}>
-                Wählen
-              </button>
-            </div>
-          </label>
-
-          <label>
-            Auftrag
-            <textarea
-              value={form.auftrag}
-              onChange={(event) => setForm({ ...form, auftrag: event.target.value })}
-              rows={4}
-              placeholder="Was der Agent können soll"
-            />
-          </label>
-
-          <label>
-            Weitere Aufträge
-            <textarea
-              value={form.extraTasks}
-              onChange={(event) => setForm({ ...form, extraTasks: event.target.value })}
-              rows={2}
-              placeholder="Eine Zeile pro Variante"
-            />
-          </label>
-
-          <fieldset className="choice" disabled={running}>
-            <legend>Prüfung</legend>
-            <label className="check">
-              <input
-                type="radio"
-                name="verifyMode"
-                checked={form.verifyMode === "command"}
-                onChange={() => setForm({ ...form, verifyMode: "command" })}
-              />
-              Testbefehl
-            </label>
-            <label className="check">
-              <input
-                type="radio"
-                name="verifyMode"
-                checked={form.verifyMode === "agent"}
-                onChange={() => setForm({ ...form, verifyMode: "agent" })}
-              />
-              Agent schreibt das Testskript
-            </label>
-          </fieldset>
-
-          <fieldset className="choice" disabled={running}>
-            <legend>Ziel</legend>
-            <label className="check">
-              <input
-                type="radio"
-                name="skillScope"
-                checked={form.skillScope !== "specific"}
-                onChange={() => setForm({ ...form, skillScope: "general" })}
-              />
-              Allgemein
-            </label>
-            <label className="check">
-              <input
-                type="radio"
-                name="skillScope"
-                checked={form.skillScope === "specific"}
-                onChange={() => setForm({ ...form, skillScope: "specific" })}
-              />
-              Dieser Auftrag
-            </label>
-          </fieldset>
-
-          {form.verifyMode === "command" ? (
-            <label>
-              Testbefehl
-              <input
-                value={form.verifyCommand}
-                onChange={(event) => setForm({ ...form, verifyCommand: event.target.value })}
-                placeholder="npm test"
-                disabled={running}
-              />
-            </label>
-          ) : null}
-
-          <div className="grid">
-            <label>
-              Zielmodell
-              <select value={form.targetModel} onChange={(event) => setForm({ ...form, targetModel: event.target.value })}>
-                {modelChoices(models, form.targetModel).map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Optimierer
-              <select
-                value={form.optimizerModel}
-                onChange={(event) => setForm({ ...form, optimizerModel: event.target.value })}
-              >
-                {modelChoices(models, form.optimizerModel).map((model) => (
-                  <option key={`opt-${model.id}`} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="grid nums">
-            <NumberField label="Schritte" value={form.steps} min={1} max={6} disabled={running} onChange={(steps) => setForm({ ...form, steps })} />
-            <NumberField label="Training" value={form.trainBatch} min={1} max={6} disabled={running} onChange={(trainBatch) => setForm({ ...form, trainBatch })} />
-            <NumberField label="Gate" value={form.selectionRepeats} min={1} max={4} disabled={running} onChange={(selectionRepeats) => setForm({ ...form, selectionRepeats })} />
-            <NumberField label="Parallel" value={form.concurrency} min={1} max={6} disabled={running} onChange={(concurrency) => setForm({ ...form, concurrency })} />
-            <NumberField label="Lernrate" value={form.learningRate} min={1} max={6} disabled={running} onChange={(learningRate) => setForm({ ...form, learningRate })} />
-          </div>
-
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={form.gateOnEmptyRepo}
-              onChange={(event) => setForm({ ...form, gateOnEmptyRepo: event.target.checked })}
-              disabled={running}
-            />
-            Gate auf leerem Repository
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={form.slowUpdate}
-              onChange={(event) => setForm({ ...form, slowUpdate: event.target.checked })}
-              disabled={running}
-            />
-            Slow-Update
-          </label>
-
+          <TrainerForm
+            form={form}
+            running={running}
+            models={models}
+            skillName={skillName}
+            onChange={setForm}
+            onChooseSkill={() => void chooseSkill()}
+            onChooseDestination={() => void chooseDestination()}
+            onChooseFolder={() => void chooseFolder()}
+          />
           <p className="estimate">
-            {runCount} Läufe · {estimate.optimizer} Optimierer
+            Bis zu {estimate.total} Agent-Läufe · {estimate.attempts} Training/Gate · {estimate.optimizer} Optimierer
+            {estimate.checks ? ` · ${estimate.checks} Testskript` : ""}
           </p>
+          {form.runBudget !== null && estimate.total > (form.runBudget ?? 48) ? (
+            <p className="budget-error" role="status">Laufbudget überschritten. Budget erhöhen oder Schritte und Wiederholungen senken.</p>
+          ) : null}
 
           <div className="actions">
             <button type="submit" className="primary" disabled={running}>
@@ -604,7 +477,7 @@ export function App() {
 function FindingCard({ step }: { step: StepRecord }) {
   const edits = [
     ...step.applied.map((edit) => `${edit.op}: ${edit.content || edit.target}`),
-    ...(step.appliedFiles ?? []).map((edit) => `${edit.path}: ${edit.content || edit.target || ""}`),
+    ...(step.appliedFiles ?? []).map((edit) => `${edit.op} ${edit.path}: ${edit.content || edit.target || ""}`),
   ];
   return (
     <article className={`card ${step.accepted ? "kept" : "dropped"}`}>
@@ -647,9 +520,9 @@ function Report({
     <article className="card report">
       <header>
         <strong>Bericht</strong>
-        <span className={improved ? "tag ok" : "tag"}>{resultTitle(summary, improved)}</span>
+        <span className={measuredImprovement(summary) ? "tag ok" : "tag"}>{resultTitle(summary)}</span>
       </header>
-      <MarkdownView text={reportBody(summary, improved)} />
+      <MarkdownView text={reportBody(summary)} />
       <h3>Änderungen</h3>
       {skillDiff ? (
         <pre>
@@ -664,7 +537,7 @@ function Report({
         </pre>
       ))}
       <h3>Optimierungen</h3>
-      {accepted.length === 0 ? <p className="quiet">Keine übernommene Optimierung.</p> : null}
+      {accepted.length === 0 ? <p className="quiet">Keine zusätzliche Optimierung durch das Gate übernommen.</p> : null}
       {accepted.map((step) => (
         <div key={`${step.kind}-${step.index}`} className="opt">
           <strong>{stepTitle(step)}</strong>
@@ -689,39 +562,6 @@ function LiveMark({ run }: { run: LiveRun }) {
   if (run.trajectory && run.trajectory.score.hard < 1) return <span className="dot bad" aria-hidden="true" />;
   if (run.trajectory) return <span className="dot" aria-hidden="true" />;
   return <span className="dot idle" aria-hidden="true" />;
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  disabled: boolean;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label>
-      {label}
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          if (Number.isFinite(next)) onChange(next);
-        }}
-      />
-    </label>
-  );
 }
 
 function isLive(run: LiveRun): boolean {
@@ -813,11 +653,6 @@ function skillLabel(preview: { name: string; fileCount: number }): string {
   return `${preview.name} · ${preview.fileCount} ${preview.fileCount === 1 ? "Datei" : "Dateien"}`;
 }
 
-function modelChoices(models: ModelOption[], selected: string): ModelOption[] {
-  if (!selected || models.some((model) => model.id === selected)) return models;
-  return [{ id: selected, label: selected }, ...models];
-}
-
 function fileChanges(summary: SessionSummary): { path: string; diff: string }[] {
   const left = summary.originalFiles ?? [];
   const right = summary.bestFiles ?? [];
@@ -832,27 +667,21 @@ function fileChanges(summary: SessionSummary): { path: string; diff: string }[] 
       changes.push({ path, diff: "Binärdatei geändert." });
       continue;
     }
-    changes.push({ path, diff: changedLines(before?.text ?? "", after?.text ?? "") || "geändert" });
+    const mode = Boolean(before?.executable) !== Boolean(after?.executable)
+      ? `\nAusführbar: ${after?.executable ? "ja" : "nein"}`
+      : "";
+    changes.push({ path, diff: `${changedLines(before?.text ?? "", after?.text ?? "") || "geändert"}${mode}` });
   }
   return changes;
 }
 
 function sameFile(left: SkillFile | undefined, right: SkillFile | undefined): boolean {
-  return (left?.text ?? "") === (right?.text ?? "") && (left?.base64 ?? "") === (right?.base64 ?? "");
-}
-
-function reportBody(summary: SessionSummary, improved: boolean): string {
-  const lines = [
-    resultTitle(summary, improved),
-    "",
-    `Start **${pct(summary.baseline.gate)}** (${summary.baseline.passes}/${summary.baseline.runs} grün). Beste Fassung **${pct(summary.best.gate)}** (${summary.best.passes}/${summary.best.runs} grün).`,
-  ];
-  if (summary.error) lines.push("", summary.error);
-  if (summary.cancelled) lines.push("", "Abgebrochen.");
-  return lines.join("\n");
+  return (left?.text ?? "") === (right?.text ?? "") && (left?.base64 ?? "") === (right?.base64 ?? "") && Boolean(left?.executable) === Boolean(right?.executable);
 }
 
 function phaseLabel(phase: string): string {
+  if (phase === "create") return "Skill erstellen";
+  if (phase === "pretrain") return "Vortraining";
   if (phase === "checks") return "Testskript";
   if (phase === "preflight") return "Vorprüfung";
   if (phase === "baseline") return "Baseline";
@@ -883,23 +712,6 @@ function authLabel(auth: AuthStatus | null): string {
   if (auth.state === "logged-in") return auth.email ?? "angemeldet";
   if (auth.state === "error") return "Fehler";
   return "abgemeldet";
-}
-
-function bundleChanged(summary: SessionSummary): boolean {
-  if (summary.bestSkill.trim() !== summary.originalSkill.trim()) return true;
-  const left = summary.originalFiles ?? [];
-  const right = summary.bestFiles ?? [];
-  if (left.length !== right.length) return true;
-  return right.some((file) => {
-    const other = left.find((item) => item.path === file.path);
-    return !other || other.text !== file.text || other.base64 !== file.base64;
-  });
-}
-
-function resultTitle(summary: SessionSummary, improved: boolean): string {
-  if (summary.error && !improved) return "Abgebrochen, Skill unverändert";
-  if (improved) return "Bessere Fassung";
-  return "Keine Verbesserung";
 }
 
 function pct(value: number): string {

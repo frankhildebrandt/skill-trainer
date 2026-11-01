@@ -6,6 +6,7 @@ const api: TrainerApi = {
   authLogin: () => ipcRenderer.invoke("auth:login"),
   listModels: () => ipcRenderer.invoke("models:list"),
   pickSkill: () => ipcRenderer.invoke("dialog:skill"),
+  pickSkillDestination: () => ipcRenderer.invoke("dialog:skill-destination"),
   pickFolder: () => ipcRenderer.invoke("dialog:folder"),
   readSkill: (skillPath) => ipcRenderer.invoke("skill:read", skillPath),
   loadSettings: () => ipcRenderer.invoke("settings:load"),

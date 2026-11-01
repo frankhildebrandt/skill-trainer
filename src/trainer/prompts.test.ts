@@ -44,4 +44,41 @@ describe("buildOptimizerPrompt", () => {
     expect(prompt).not.toContain("skill-trainer/sessions");
     expect(prompt).toContain("[path]");
   });
+
+  it("describes the configured budget and allows complete folder changes", () => {
+    const prompt = buildOptimizerPrompt({ ...base, learningRate: 9, budget: {
+      unlimited: false, maxEditChars: 8000, maxAddedChars: 16000, maxFileEdits: 12, maxFileChars: 25000,
+    } });
+    expect(prompt).toContain("at most 9 text edits");
+    expect(prompt).toContain("8000 characters");
+    expect(prompt).toContain("16000 added characters");
+    expect(prompt).toContain("12 file operations");
+    expect(prompt).toContain("25000 characters");
+    expect(prompt).toContain("SKILL.md can be rewritten");
+    expect(prompt).toContain("delete: \"path\" identifies an obsolete companion file");
+    expect(prompt).not.toContain("Do not change the name field");
+  });
+
+  it("removes optimizer budget limits and includes every complete reference", () => {
+    const marker = "LAST REFERENCE END";
+    const files = Array.from({ length: 15 }, (_, index) => ({ path: `references/${index}.md`, text: `${"x".repeat(2200)}\n${index === 14 ? marker : index}` }));
+    const prompt = buildOptimizerPrompt({ ...base, files, budget: {
+      unlimited: true, maxEditChars: 1800, maxAddedChars: 2500, maxFileEdits: 4, maxFileChars: 12000,
+    } });
+    expect(prompt).toContain("no harness limit on the number of edits");
+    expect(prompt).not.toContain("at most 1 text edits");
+    expect(prompt).toContain(marker);
+    expect(prompt).toContain("x".repeat(2200));
+  });
+
+  it("supports creating and pretraining skills from a brief before rollouts exist", () => {
+    const create = buildOptimizerPrompt({ ...base, kind: "create", skillBrief: "Create a release skill with a validation script." });
+    expect(create).toContain("Create a new skill folder");
+    expect(create).toContain("Write the complete SKILL.md");
+    expect(create).toContain("Create a release skill with a validation script.");
+    expect(create).toContain("There are no rollout results yet");
+    const pretrain = buildOptimizerPrompt({ ...base, kind: "pretrain", skillBrief: "Replace outdated references." });
+    expect(pretrain).toContain("pretraining before fine-tuning");
+    expect(pretrain).toContain("Replace outdated references.");
+  });
 });

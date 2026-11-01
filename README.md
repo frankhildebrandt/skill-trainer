@@ -4,26 +4,40 @@
 
 Trainiert eine `SKILL.md` gegen einen Projektordner und einen Auftrag. Die Läufe gehen über das Cursor-SDK und damit über dein Cursor-Abo. Electron, weil das SDK in Node läuft.
 
-Das Verfahren folgt [SkillOpt](https://microsoft.github.io/SkillOpt/) von Microsoft Research: das Skill-Dokument ist der trainierbare Zustand, das Modell bleibt fest. Ein Optimierer darf nur kleine Einfüge-, Ersatz- und Lösch-Edits setzen. Eine Fassung wird nur behalten, wenn sie auf frischen Läufen des Hauptauftrags einen höheren Gate-Score hat. Gleichstand zählt als Ablehnung.
+Das Fine-Tuning folgt [SkillOpt](https://microsoft.github.io/SkillOpt/) von Microsoft Research: der Skill-Ordner ist der trainierbare Zustand, das Modell bleibt fest. Der Optimierer kann die gesamte `SKILL.md` umschreiben, Frontmatter ändern und Referenzen oder Skripte anlegen, ändern und löschen. Eine Fine-Tuning-Fassung wird nur behalten, wenn sie auf frischen Läufen des Hauptauftrags einen höheren Gate-Score hat. Gleichstand zählt als Ablehnung.
+
+## Workflows und Budgets
+
+- **Fine-Tuning:** Einen vorhandenen Skill anhand von Trainingsläufen verbessern und jede Änderung durch das Gate prüfen.
+- **Vortraining:** Einen vorhandenen Skill nach einer Beschreibung neu aufbauen oder erweitern, einschließlich seiner Referenzen und Skripte. Optional startet anschließend das Fine-Tuning mit dem Entwurf als Baseline.
+- **Create Skill:** Name, Beschreibung und einen neuen Zielordner angeben. Der Optimierer erstellt eine `SKILL.md` mit Frontmatter und die benötigten Begleitdateien. Auch hier kann direkt Fine-Tuning folgen.
+
+Ohne „Anschließend Fine-Tuning“ brauchen Vortraining und Create Skill keinen Projektordner, Trainingsauftrag oder Prüfbefehl. Der Bericht kennzeichnet das Ergebnis als ungemessenen Entwurf. Vortraining und Erstellung übernehmen den Entwurf ohne Leistungsgate; erst das anschließende Fine-Tuning misst seine Qualität. Ein fertiger Entwurf bleibt auch erhalten, wenn die spätere Vorprüfung fehlschlägt oder das Training abgebrochen wird.
+
+Unter **Budgets** lassen sich Zeichen pro Text-Edit, insgesamt hinzugefügte Zeichen, Anzahl der Dateioperationen und Zeichen pro Dateioperation einstellen. Die Lernrate bestimmt die Zahl der Text-Edits und fällt beim Fine-Tuning über die Schritte. „Optimizer ohne Edit-Budget“ hebt alle diese Grenzen einschließlich der Lernrate auf. Das gilt auch für vollständige Neufassungen der `SKILL.md`, neue Referenzen und ausführbare Skripte. Der Optimierer erhält die vollständigen Texte der Begleitdateien.
+
+Das **Laufbudget** begrenzt die geplante Gesamtzahl aus Trainings-, Baseline-, Gate-, Optimierer- und Testskript-Läufen. Es ist standardmäßig 48, kann erhöht oder mit „Ohne Laufbudget“ aufgehoben werden. Schritte, Batch-Größe und Gate-Wiederholungen haben keine festen kleinen Obergrenzen mehr. Ein Lauf ohne Budget endet weiterhin nach den eingestellten Schritten; die Zeitlimits gelten weiter. Die Schätzung berücksichtigt auch den Entwurfsschritt vor dem Fine-Tuning.
+
+Alle Änderungen bleiben zunächst in der Sitzung. **Änderungen übernehmen** erstellt einen neuen Skill-Ordner oder sichert bei vorhandenen Skills den vollständigen alten Ordner als Backup. Gelöschte Begleitdateien werden dabei entfernt und Ausführungsrechte von Skripten erhalten. Bereits vorhandene Zielordner werden bei Create Skill abgewiesen.
 
 ## Schleife
 
 1. Vorprüfung. Der Prüfbefehl muss auf einer frischen Kopie noch fehlschlagen. Sonst kann das Gate einen besseren Skill nicht vom Nichtstun unterscheiden. Wenn der Agent das Testskript schreibt, liegt es unter `.skill-trainer/checks/run.sh`. Nur dieser Ordner wird übernommen und vor jeder Bewertung wiederhergestellt.
 2. Baseline. Der aktuelle Skill läuft mehrfach auf dem Hauptauftrag.
 3. Training. Weitere Läufe, parallel, jeder in einer eigenen Git-Worktree-Kopie. Uncommittete Dateien werden mitgenommen. `node_modules`, `.venv` und `venv` werden per `cp -c` kopiert, nicht verlinkt.
-4. Reflexion. Fehlschläge und Treffer gehen getrennt an einen zweiten Cursor-Agenten. Der schlägt begrenzte Edits vor. Die Lernrate fällt über die Schritte (Cosine) und deckelt Anzahl und Länge.
+4. Reflexion. Fehlschläge und Treffer gehen getrennt an einen zweiten Cursor-Agenten. Der schlägt Änderungen am gesamten Skill-Ordner vor. Die eingestellten Budgets gelten, sofern sie nicht aufgehoben wurden.
 5. Gate. Dieselben frischen Wiederholungen des Hauptauftrags, mit der Kandidatenfassung. Übernommen nur bei striktem Anstieg.
-6. Verworfene Edits bleiben als Negativbeispiel für den nächsten Vorschlag. Ein Slow-Update am Ende darf eine kurze dauerhafte Notiz in einen geschützten Block schreiben, wieder nur nach Gate.
+6. Verworfene Edits bleiben als Negativbeispiel für den nächsten Vorschlag. Ein Slow-Update am Ende darf eine dauerhafte Notiz ergänzen, wieder nur nach Gate. Auch dieser Bereich darf vom Optimierer überarbeitet werden.
 
 Der Gate-Score ist zu 85 % „Prüfbefehl Exit 0“ und zu 15 % „weniger Werkzeugaufrufe“. Ein Fehlschlag schlägt nie einen Treffer. Zwei Treffer unterscheidet, wer weniger recherchieren musste.
 
 Zusätzliche Aufträge (eine Zeile pro Variante) werden nur zum Lernen benutzt. Das Gate sieht immer den Hauptauftrag.
 
-Mit „Gate auf leerem Repository“ bleibt das Training im Projektordner, und Baseline plus Gate laufen in einem neuen leeren Git-Repo, das nur den Skill enthält. Damit lässt sich ein Modul- oder Add-on-Skill darauf prüfen, ob er ohne den vorhandenen Code auskommt. Der Prüfbefehl muss auf dem leeren Repo rot sein. Im Projekt darf er schon grün sein. Verworfene Gate-Läufe gehen als Negativbeispiel in den nächsten Optimierer-Schritt.
+Mit „Gate auf leerem Repository“ laufen Training, Baseline und Gate in einem neuen leeren Git-Repo, das nur den Skill und gegebenenfalls das Prüfskript enthält. Damit lässt sich ein Modul- oder Add-on-Skill darauf prüfen, ob er ohne den vorhandenen Code auskommt. Der Prüfbefehl muss auf dem leeren Repo rot sein. Im Projekt darf er schon grün sein. Verworfene Gate-Läufe gehen als Negativbeispiel in den nächsten Optimierer-Schritt.
 
-Die Wegwerfkopien ändern deinen Ordner nicht. Fehlgeschlagene Kopien bleiben liegen, damit du sie öffnen kannst. In die `SKILL.md` schreibt die App erst, wenn du auf „In die SKILL.md schreiben“ klickst, und legt vorher ein Backup daneben.
+Die Wegwerfkopien ändern deinen Ordner nicht. Fehlgeschlagene Kopien bleiben liegen, damit du sie öffnen kannst. In den Skill-Ordner schreibt die App erst, wenn du auf „Änderungen übernehmen“ klickst, und legt vorher ein Backup daneben.
 
-Ein Skill darf ein Ordner sein: `SKILL.md` plus Skripte, Referenzen und weitere Dateien. Die Auswahl nimmt den Ordner oder die `SKILL.md`; mitkommt immer der ganze Ordner. Jeder Lauf bekommt diese Dateien, und der Optimierer darf sie im selben Edit-Budget ändern. „In den Skill-Ordner schreiben“ legt ein Backup des Ordners daneben und schreibt die übernommene Fassung zurück.
+Ein Skill darf ein Ordner sein: `SKILL.md` plus Skripte, Referenzen und weitere Dateien. Die Auswahl nimmt den Ordner oder die `SKILL.md`; mitkommt der ganze Ordner außer Git-Metadaten, Abhängigkeiten und Caches. Jeder Lauf bekommt die aktuelle Fassung einschließlich neu angelegter und gelöschter Dateien. Text-Edits und Dateioperationen haben getrennt einstellbare Budgets.
 
 Während der Läufe bekommt der Agent den Skill-Text direkt in den Prompt und den Skill-Ordner in der Kopie (`.cursor/skills/…`, plus der ursprüngliche Pfad, wenn der Skill im Projekt liegt). Projekt-Settings sind an, globale Skills aus, damit nicht eine ältere Nutzerfassung mitmisst.
 

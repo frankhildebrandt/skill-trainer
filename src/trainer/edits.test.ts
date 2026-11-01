@@ -71,6 +71,33 @@ describe("applyEdits", () => {
     );
     expect(result.skill).toBe("Alpha\nBetween\nBeta\n");
   });
+
+  it("uses custom edit length and total growth budgets", () => {
+    const content = "x".repeat(3000);
+    const edits = [{ op: "append" as const, target: "", content }];
+    expect(applyEdits(skill, edits, { limit: 1 }).skipped[0]?.reason).toMatch(/zu lang/);
+    expect(applyEdits(skill, edits, { limit: 1, maxEditChars: 4000 }).skipped[0]?.reason).toMatch(/Zeichenbudget/);
+    const result = applyEdits(skill, edits, { limit: 1, maxEditChars: 4000, maxAddedChars: 4000 });
+    expect(result.applied).toHaveLength(1);
+    expect(result.skill).toContain(content);
+  });
+
+  it("supports unlimited restructuring including the old slow region", () => {
+    const content = "x".repeat(10_000);
+    const result = applyEdits(skill, [
+      { op: "replace", target: "keep this lesson", content },
+      ...Array.from({ length: 8 }, (_, index) => ({ op: "append" as const, target: "", content: `Rule ${index}.` })),
+    ], { limit: Infinity, maxEditChars: Infinity, maxAddedChars: Infinity, protectSlowRegion: false });
+    expect(result.applied).toHaveLength(9);
+    expect(result.skill).not.toContain("keep this lesson");
+    expect(result.skill).toContain(content);
+  });
+
+  it("protects targets that cross a slow-region boundary", () => {
+    const result = applyEdits(skill, [{ op: "delete", target: `parsers.\n\n${SLOW_START}`, content: "" }], { limit: 1 });
+    expect(result.applied).toHaveLength(0);
+    expect(result.skill).toBe(skill);
+  });
 });
 
 describe("setSlowRegion", () => {
@@ -79,5 +106,11 @@ describe("setSlowRegion", () => {
     expect(next).toContain("Run the build before you edit parsers.");
     expect(next).toContain("Search memory");
     expect(next).not.toContain("keep this lesson");
+  });
+
+  it("removes the slow-note length cap when unlimited", () => {
+    const lesson = "a".repeat(3000);
+    expect(setSlowRegion(skill, lesson, Infinity)).toContain(lesson);
+    expect(setSlowRegion(skill, lesson)).not.toContain(lesson);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Trajectory } from "../shared/types";
 import type { Proposal } from "./json";
 import { trainSkill, type AttemptCall, type ProposeCall } from "./loop";
+import { DEFAULT_BUDGET } from "../shared/budget";
 
 const MAGIC = "Run `npm test` before editing parsers.";
 
@@ -126,6 +127,30 @@ describe("trainSkill", () => {
       },
     });
     expect(gates).toBe(0);
+  });
+
+  it("carries unlimited document and file edits through the measured gate", async () => {
+    const summary = await trainSkill({
+      ...baseConfig({ slowUpdate: false, steps: 1 }),
+      learningRate: 1,
+      budget: { ...DEFAULT_BUDGET, unlimited: true },
+      files: [{ path: "obsolete.md", text: "old" }],
+    }, {
+      emit: () => undefined,
+      propose: async (input) => {
+        expect(input.budget?.unlimited).toBe(true);
+        return { reasoning: "Rebuild all references.", slow: null,
+          edits: Array.from({ length: 7 }, (_, i) => ({ op: "append" as const, target: "", content: `${i}: ${"procedure ".repeat(300)}` })),
+          files: [{ op: "delete" as const, path: "obsolete.md", content: "" }, ...Array.from({ length: 6 }, (_, i) => ({ op: "write" as const, path: `references/${i}.md`, content: "reference ".repeat(1500) }))],
+        };
+      },
+      runAttempt: async (input) => trajectory(input,
+        input.skill.includes("6: procedure") && input.files.filter((file) => file.path.startsWith("references/")).length === 6 && !input.files.some((file) => file.path === "obsolete.md")),
+    });
+    expect(summary.error).toBeUndefined();
+    expect(summary.best.passes).toBe(2);
+    expect(summary.steps[1].applied).toHaveLength(7);
+    expect(summary.steps[1].appliedFiles).toHaveLength(7);
   });
 });
 

@@ -57,3 +57,11 @@ describe("restoreSettings", () => {
     expect(form?.optimizerModel).toBe("default");
   });
 });
+
+it("restores workflow, unlimited budgets, and draft-only settings", () => {
+  const budget = { unlimited: true, maxEditChars: 50000, maxAddedChars: 200000, maxFileEdits: 30, maxFileChars: 120000 };
+  const restored = restoreSettings({ workflow: "create", skillName: "my-skill", skillBrief: "A reusable skill.", trainAfterDraft: false, budget, runBudget: null });
+  expect(restored).toMatchObject({ workflow: "create", skillName: "my-skill", skillBrief: "A reusable skill.", trainAfterDraft: false, budget, runBudget: null });
+  expect(restoreSettings({})?.budget?.maxFileEdits).toBe(4);
+  expect(restoreSettings({})?.runBudget).toBe(48);
+});

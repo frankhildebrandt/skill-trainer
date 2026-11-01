@@ -1,4 +1,5 @@
-import type { FileEdit, Rejection, SkillEdit, SkillFile, Trajectory } from "../shared/types";
+import type { FileEdit, OptimizerBudget, Rejection, SkillEdit, SkillFile, Trajectory } from "../shared/types";
+import { DEFAULT_BUDGET } from "../shared/budget";
 
 export function buildTargetPrompt(input: {
   skill: string;
@@ -62,7 +63,7 @@ ${input.auftrag}
 
 export function buildOptimizerPrompt(input: {
   skill: string;
-  kind: "step" | "slow";
+  kind: "step" | "slow" | "create" | "pretrain";
   learningRate: number;
   train: Trajectory[];
   rejected: Rejection[];
@@ -70,6 +71,8 @@ export function buildOptimizerPrompt(input: {
   emptyGate?: boolean;
   skillScope?: "general" | "specific";
   auftrag?: string;
+  skillBrief?: string;
+  budget?: OptimizerBudget;
 }): string {
   const failures = input.train.filter((run) => run.score.hard < 1);
   const successes = input.train.filter((run) => run.score.hard >= 1);
@@ -96,21 +99,31 @@ export function buildOptimizerPrompt(input: {
     })
     .join("\n\n");
 
-  const slowHint =
-    input.kind === "slow"
-      ? `This is a slow update. Put the durable lesson in the "slow" string (plain markdown, at most 1200 characters). You may also propose up to ${input.learningRate} small edits. Step edits must not touch the existing slow region; the harness replaces that region from "slow".`
-      : `Propose at most ${input.learningRate + 2} edits, ranked from most useful to least. The harness keeps only the first ${input.learningRate} that apply cleanly. Leave "slow" as an empty string.`;
+  const budget = input.budget ?? DEFAULT_BUDGET;
+  const budgetHint = budget.unlimited
+    ? `There is no optimizer edit budget: no harness limit on the number of edits or file operations, individual edit length, file-operation content length, or total added characters. Return all changes needed for a coherent skill folder.`
+    : `Budget for this proposal: at most ${input.learningRate} text edits in "edits", each containing at most ${budget.maxEditChars} characters in "content", with at most ${budget.maxAddedChars} added characters in total. At most ${budget.maxFileEdits} file operations in "files", each containing at most ${budget.maxFileChars} characters in "content". These are separate budgets. Rank changes from most useful to least; the harness applies only changes that fit.`;
+  const slowHint = input.kind === "slow"
+    ? `This is a slow update. Put the durable lesson in the "slow" string (plain markdown${budget.unlimited ? " without a harness length limit" : `, at most ${Math.min(budget.maxEditChars, budget.maxAddedChars)} characters`}). You may also propose edits and file operations within the budget above.`
+    : `Leave "slow" as an empty string.`;
+  const draftHint = input.kind === "create"
+    ? `Create a new skill folder from the brief below. There are no rollout results yet. Write the complete SKILL.md using a "write" operation in "files", plus any useful references, scripts, or assets. Give SKILL.md YAML frontmatter with a name and a description that explains when to use it.`
+    : input.kind === "pretrain"
+      ? `This is pretraining before fine-tuning. Restructure, expand, or rewrite the existing skill folder according to the brief below. There are no rollout results yet. Improve its procedure, references, and scripts as a coherent whole.`
+      : `This is fine-tuning from the rollout evidence below. Propose a coherent improvement that will be tested on fresh held-out runs.`;
 
   const aim =
     input.skillScope === "specific"
       ? `This skill is for this assignment, not a general procedure. Encode the concrete commands, paths, flags, APIs, and pitfalls that make this task succeed. You may name this task's files and checks. Do not paste a finished solution or a diff the agent can copy instead of doing the work.`
       : `This skill must stay general. Write reusable procedure for this kind of task: commands, flags, file locations, API names, order of operations, and pitfalls. Do not paste the solution, the diff, or a task-specific answer into the skill. Do not add a rule that only restates this one assignment.`;
 
-  return `You optimize one skill folder. The target model stays frozen. You change SKILL.md and, when that is not enough, the reference documents and scripts beside it.
+  return `You optimize one skill folder. The target model stays frozen. You may change everything inside this skill folder: rewrite SKILL.md, update its frontmatter and name when useful, add or replace reference documents and scripts, and delete obsolete companion files.
 
 The run directories are already gone, including copies that passed. The scores, diffs, and errors below are the whole record. Do not search the disk, the original project, Application Support, or any earlier session. Do not call tools.
 
 The skill must make the next agent reach the task with less searching and fewer mistakes. ${aim}
+${draftHint}
+${input.skillBrief ? `\nSkill brief:\n<brief>\n${input.skillBrief}\n</brief>\n` : ""}
 ${
   input.skillScope === "specific" && input.auftrag
     ? `
@@ -127,7 +140,7 @@ Every rollout below ran in a fresh empty repository. The agent could not read th
     : ""
 }
 
-Keep the YAML frontmatter. Do not change the name field. Keep the document compact.
+Keep valid YAML frontmatter with a name and description. Keep the main document clear; move detailed reference material and executable helpers into companion files when useful. The existing slow region is editable like the rest of SKILL.md.
 
 Operations:
 - append: add "content" at the end of the editable body. "target" is "".
@@ -137,10 +150,13 @@ Operations:
 
 If a target string is not unique, the harness skips the edit. Prefer short targets that occur once.
 
-Companion files travel with SKILL.md and have their own budget of 4, separate from the SKILL.md edits. Add a reference document or a script when the next agent would otherwise have to rediscover it. Do not put SKILL.md changes in "files".
-- write: "path" is relative to the skill folder, "content" is the full new text file. Use this for a new document or script.
+File operations travel with SKILL.md. Add a reference document or a script when the next agent would otherwise have to rediscover it. SKILL.md can be rewritten through "files", including during fine-tuning. Do not also text-edit a section that a later file write replaces.
+- write: "path" is relative to the skill folder, "content" is the full new text file. Use this to create or fully rewrite SKILL.md, a document, or a script. Set "executable": true for runnable scripts.
 - replace: "path" plus an exact unique "target" snippet inside an existing file.
+- delete: "path" identifies an obsolete companion file; "content" is "". SKILL.md must remain present and nonempty.
+- All paths must stay inside the skill folder. No absolute paths, parent/dot segments, or .git paths.
 
+${budgetHint}
 ${slowHint}
 
 Reply with one JSON object and nothing else. Do not edit files.
@@ -152,7 +168,7 @@ Reply with one JSON object and nothing else. Do not edit files.
   ],
   "files": [
     { "op": "write", "path": "reference.md", "content": "the commands, layout, and pitfalls" },
-    { "op": "write", "path": "scripts/scaffold.sh", "content": "the script the agent should run" }
+    { "op": "write", "path": "scripts/scaffold.sh", "content": "the script the agent should run", "executable": true }
   ]
 }
 
@@ -195,10 +211,9 @@ function formatSkillFiles(files: SkillFile[]): string {
   const others = files.filter((file) => file.path !== "SKILL.md");
   if (others.length === 0) return "(none)";
   return others
-    .slice(0, 12)
     .map((file) => {
       if (file.base64) return `${file.path} (binary, copied unchanged)`;
-      return `--- ${file.path} ---\n${clip(file.text ?? "", 1800)}`;
+      return `--- ${file.path}${file.executable ? " (executable)" : ""} ---\n${file.text ?? ""}`;
     })
     .join("\n\n");
 }
