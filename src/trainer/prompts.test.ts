@@ -74,11 +74,18 @@ describe("buildOptimizerPrompt", () => {
   it("supports creating and pretraining skills from a brief before rollouts exist", () => {
     const create = buildOptimizerPrompt({ ...base, kind: "create", skillBrief: "Create a release skill with a validation script." });
     expect(create).toContain("Create a new skill folder");
+    expect(create).toContain("only after you have read the repository");
+    expect(create).toContain("Before you design the skill, read that codebase");
+    expect(create).not.toContain("Do not call tools");
     expect(create).toContain("Write the complete SKILL.md");
     expect(create).toContain("Create a release skill with a validation script.");
     expect(create).toContain("There are no rollout results yet");
     const pretrain = buildOptimizerPrompt({ ...base, kind: "pretrain", skillBrief: "Replace outdated references." });
     expect(pretrain).toContain("pretraining before fine-tuning");
+    expect(pretrain).toContain("Only after you have read the repository");
+    expect(pretrain).toContain("Before you design the skill, read that codebase");
+    expect(pretrain).not.toContain("Do not call tools");
     expect(pretrain).toContain("Replace outdated references.");
+    expect(buildOptimizerPrompt(base)).toContain("Do not call tools");
   });
 });

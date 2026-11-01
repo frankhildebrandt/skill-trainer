@@ -234,11 +234,9 @@ async function runSession(
   record: SessionRecord,
 ): Promise<SessionSummary> {
   const config = normalizeRequest(request, currentLocale);
-  if (config.trainAfterDraft) {
-    assertSafeWorkspace(config.workspacePath);
-    const workspaceStat = await fs.stat(config.workspacePath);
-    if (!workspaceStat.isDirectory()) throw new Error(t("backend.projectNotFolder"));
-  }
+  assertSafeWorkspace(config.workspacePath);
+  const workspaceStat = await fs.stat(config.workspacePath);
+  if (!workspaceStat.isDirectory()) throw new Error(t("backend.projectNotFolder"));
   const bundle = config.workflow === "create" ? await newSkillBundle(config) : await loadSkillBundle(config.skillPath);
   record.summary = null;
   record.skillRoot = bundle.root;

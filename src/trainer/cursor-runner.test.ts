@@ -34,16 +34,21 @@ beforeEach(() => {
 
 interface RunOptions {
   chunks?: string[];
+  events?: unknown[];
   result?: string;
   status?: "finished" | "cancelled" | "error";
   error?: string;
   streamError?: Error;
 }
 
-function run({ chunks = [], result = "", status = "finished", error, streamError }: RunOptions = {}) {
+function run({ chunks = [], events, result = "", status = "finished", error, streamError }: RunOptions = {}) {
   return {
     stream: vi.fn(async function* () {
-      for (const text of chunks) yield { type: "assistant", message: { content: [{ type: "text", text }] } };
+      if (events) {
+        for (const event of events) yield event;
+      } else {
+        for (const text of chunks) yield { type: "assistant", message: { content: [{ type: "text", text }] } };
+      }
       if (streamError) throw streamError;
     }),
     supports: vi.fn((feature: string) => feature === "cancel"),
@@ -62,7 +67,7 @@ function t(locale: Locale): Translate {
   return (key, values) => translate(locale, key, values);
 }
 
-function proposalInput(extra: { translate?: Translate; onActivity?: (update: ActivityUpdate) => void } = {}): ProposeCall & {
+function proposalInput(extra: Partial<ProposeCall> & { translate?: Translate; onActivity?: (update: ActivityUpdate) => void } = {}): ProposeCall & {
   model: string;
   cwd: string;
   translate?: Translate;
@@ -110,6 +115,55 @@ describe("localized model completions", () => {
     expect(mocks.rm).toHaveBeenCalledWith("/virtual/skill-trainer-opt-call", { recursive: true, force: true });
   });
 
+  it("reads the project with read-only tools before a create or pretrain proposal", async () => {
+    const completion = run({
+      status: "cancelled",
+      events: [
+        { type: "tool_call", name: "read", status: "completed", call_id: "read-1", args: { path: "src/app.ts" }, result: "export {}" },
+        { type: "assistant", message: { content: [{ type: "text", text: proposalJson }] } },
+      ],
+    });
+    const model = agent(completion);
+    mocks.create.mockResolvedValue(model);
+
+    await proposeWithCursor(proposalInput({ kind: "create", workspacePath: "/virtual/project" }));
+
+    const prompt = model.send.mock.calls[0][0] as string;
+    expect(prompt).toContain("Before you design the skill, read that codebase");
+    expect(prompt).toContain("Read the repository before you answer");
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      tools: ["read", "grep", "glob", "ls", "semSearch"],
+      local: expect.objectContaining({ cwd: "/virtual/project", settingSources: [] }),
+    }));
+    expect(model.send).toHaveBeenCalledTimes(1);
+    expect(completion.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again when a draft is proposed before the codebase was read", async () => {
+    const skipped = run({ chunks: [proposalJson] });
+    const read = run({
+      status: "cancelled",
+      events: [
+        { type: "tool_call", name: "grep", status: "completed", call_id: "grep-1", args: { pattern: "export" }, result: "src/app.ts" },
+        { type: "assistant", message: { content: [{ type: "text", text: proposalJson }] } },
+      ],
+    });
+    const model = agent(skipped, read);
+    mocks.create.mockResolvedValue(model);
+    const updates: ActivityUpdate[] = [];
+
+    const result = await proposeWithCursor(proposalInput({
+      kind: "pretrain", workspacePath: "/virtual/project", translate: t("de"), onActivity: (update) => updates.push(update),
+    }));
+
+    expect(result.reasoning).toBe(proposal.reasoning);
+    expect(model.send).toHaveBeenCalledTimes(2);
+    expect(model.send.mock.calls[1][0]).toContain("You have not read the repository");
+    expect(updates).toContainEqual({ op: "note", text: "Zweiter Versuch im selben Lauf. Die Codebase wurde noch nicht gelesen." });
+    expect(skipped.cancel).not.toHaveBeenCalled();
+    expect(read.cancel).toHaveBeenCalledTimes(1);
+  });
+
   it("localizes optimizer retry and completion notes through the supplied translator", async () => {
     const first = run({ result: "The response is not JSON." });
     const second = run({ chunks: [proposalJson], status: "cancelled" });
@@ -126,6 +180,10 @@ describe("localized model completions", () => {
     expect(result.reasoning).toBe(proposal.reasoning);
     expect(result.edits[0].content).toBe(proposal.edits[0].content);
     expect(model.send).toHaveBeenCalledTimes(2);
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      tools: [],
+      local: expect.objectContaining({ cwd: "/virtual/skill-trainer-opt-call", settingSources: [] }),
+    }));
     expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(second.cancel).toHaveBeenCalledTimes(1);
     expect(model[Symbol.asyncDispose]).toHaveBeenCalledTimes(1);

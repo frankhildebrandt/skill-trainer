@@ -52,8 +52,8 @@ export function normalizeRequest(request: TrainRequest, locale: Locale = "de"): 
     throw new Error(t("trainer.invalidSkillName"));
   }
   if (workflow !== "train" && !skillBrief) throw new Error(t("trainer.describeSkill"));
+  if (!workspacePath) throw new Error(t("trainer.chooseProject"));
   if (trainAfterDraft) {
-    if (!workspacePath) throw new Error(t("trainer.chooseProject"));
     if (!auftrag) throw new Error(t("trainer.missingTask"));
     if (verifyMode === "command" && !verifyCommand) {
       throw new Error(t("trainer.missingCheck"));

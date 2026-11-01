@@ -40,6 +40,6 @@ Die Modellaufrufe werden über deine Cursor-Nutzung abgerechnet. Edit- und Laufb
 
 Für Fine-Tuning brauchst du einen konkreten Projektordner und einen Test, der die noch offene Aufgabe erkennt. Installiere die Abhängigkeiten des Projekts und prüfe, ob der gewünschte Testbefehl dort ausführbar ist. Der Ausgangstest muss fehlschlagen, weil die Aufgabe noch nicht erfüllt ist.
 
-Für Vortraining oder Create Skill ohne anschließendes Fine-Tuning reichen ein Skill beziehungsweise ein neuer Zielordner und eine Beschreibung. Ein Projekt und ein Prüfbefehl werden dann nicht benötigt.
+Für Vortraining oder Create Skill ohne anschließendes Fine-Tuning reichen ein Skill beziehungsweise ein neuer Zielordner, eine Beschreibung und der Projektordner. Der Entwurf liest diese Codebase, bevor er den Skill schreibt. Ein Prüfbefehl wird dann nicht benötigt.
 
 Weiter mit [Dein erster Lauf](/docs/erster-lauf/) oder der [Workflow-Auswahl](/docs/workflows/).

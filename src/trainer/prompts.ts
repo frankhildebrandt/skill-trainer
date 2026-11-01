@@ -106,11 +106,15 @@ export function buildOptimizerPrompt(input: {
   const slowHint = input.kind === "slow"
     ? `This is a slow update. Put the durable lesson in the "slow" string (plain markdown${budget.unlimited ? " without a harness length limit" : `, at most ${Math.min(budget.maxEditChars, budget.maxAddedChars)} characters`}). You may also propose edits and file operations within the budget above.`
     : `Leave "slow" as an empty string.`;
+  const drafting = input.kind === "create" || input.kind === "pretrain";
   const draftHint = input.kind === "create"
-    ? `Create a new skill folder from the brief below. There are no rollout results yet. Write the complete SKILL.md using a "write" operation in "files", plus any useful references, scripts, or assets. Give SKILL.md YAML frontmatter with a name and a description that explains when to use it.`
+    ? `Create a new skill folder from the brief below, only after you have read the repository. There are no rollout results yet. Write the complete SKILL.md using a "write" operation in "files", plus any useful references, scripts, or assets. Give SKILL.md YAML frontmatter with a name and a description that explains when to use it.`
     : input.kind === "pretrain"
-      ? `This is pretraining before fine-tuning. Restructure, expand, or rewrite the existing skill folder according to the brief below. There are no rollout results yet. Improve its procedure, references, and scripts as a coherent whole.`
+      ? `This is pretraining before fine-tuning. Only after you have read the repository, restructure, expand, or rewrite the existing skill folder according to the brief below. There are no rollout results yet. Improve its procedure, references, and scripts as a coherent whole.`
       : `This is fine-tuning from the rollout evidence below. Propose a coherent improvement that will be tested on fresh held-out runs.`;
+  const record = drafting
+    ? `You are running inside the project this skill is for. Before you design the skill, read that codebase. Use the read, search, and directory tools to inspect the code, commands, layout, APIs, and pitfalls the skill must carry. Finish that inspection before you write any proposal. Do not edit, create, or delete files. Do not search outside this repository.`
+    : `The run directories are already gone, including copies that passed. The scores, diffs, and errors below are the whole record. Do not search the disk, the original project, Application Support, or any earlier session. Do not call tools.`;
 
   const aim =
     input.skillScope === "specific"
@@ -119,7 +123,7 @@ export function buildOptimizerPrompt(input: {
 
   return `You optimize one skill folder. The target model stays frozen. You may change everything inside this skill folder: rewrite SKILL.md, update its frontmatter and name when useful, add or replace reference documents and scripts, and delete obsolete companion files.
 
-The run directories are already gone, including copies that passed. The scores, diffs, and errors below are the whole record. Do not search the disk, the original project, Application Support, or any earlier session. Do not call tools.
+${record}
 
 The skill must make the next agent reach the task with less searching and fewer mistakes. ${aim}
 ${draftHint}

@@ -26,7 +26,8 @@ export async function prepareSkillDraft(
   const proposal = await propose({
     skill, files: bundle.files, kind: config.workflow, learningRate: config.learningRate,
     budget: config.budget, skillBrief: config.skillBrief, train: [], rejected: [],
-    emptyGate: config.gateOnEmptyRepo, skillScope: config.skillScope, auftrag: config.auftrag, signal,
+    emptyGate: config.gateOnEmptyRepo, skillScope: config.skillScope, auftrag: config.auftrag,
+    workspacePath: config.workspacePath, signal,
   });
   throwIfAborted(signal);
   const candidate = applyProposal({ skill, files: bundle.files, proposal, learningRate: config.learningRate, budget: config.budget, translate: t });
