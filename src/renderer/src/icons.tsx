@@ -69,6 +69,22 @@ export function ExternalIcon() {
   );
 }
 
+export function PlusIcon() {
+  return (
+    <Icon>
+      <path d="M12 5v14M5 12h14" />
+    </Icon>
+  );
+}
+
+export function CloseIcon() {
+  return (
+    <Icon>
+      <path d="m6.5 6.5 11 11M17.5 6.5l-11 11" />
+    </Icon>
+  );
+}
+
 export function CheckIcon() {
   return (
     <Icon>
