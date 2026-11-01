@@ -8,7 +8,7 @@ import { aggregate } from "../shared/score";
 import { performAttempt } from "../trainer/attempt";
 import { CHECK_COMMAND, harvestChecks, plantChecks, writeChecks, type CheckFile } from "../trainer/checks";
 import { normalizeRequest } from "../trainer/config";
-import { executeAgent, isStartupError, proposeWithCursor } from "../trainer/cursor-runner";
+import { deriveSkillFields, executeAgent, isStartupError, proposeWithCursor } from "../trainer/cursor-runner";
 import { prepareSkillDraft } from "../trainer/draft";
 import { assertSafeWorkspace, createEmptyRepo, isolateWorkspace } from "../trainer/isolate";
 import { trainSkill, type AttemptCall, type TrainerDeps } from "../trainer/loop";
@@ -89,6 +89,18 @@ export function registerBackend(): void {
   ipcMain.handle("settings:load", () => readSavedSettings());
   ipcMain.handle("settings:save", async (_event, request: TrainRequest) => {
     await writeSavedSettings(request);
+  });
+  ipcMain.handle("skill:derive", async (_event, skillPath: unknown, modelId: unknown) => {
+    const model = String(modelId ?? "").trim();
+    if (!model) throw new Error("Kein Modell gewählt.");
+    const bundle = await loadSkillBundle(String(skillPath ?? ""));
+    const controller = new AbortController();
+    return deriveSkillFields({
+      model,
+      skill: bundle.document,
+      files: bundle.files,
+      signal: controller.signal,
+    });
   });
   ipcMain.handle("skill:read", async (_event, skillPath: string) => {
     const bundle = await loadSkillBundle(skillPath);

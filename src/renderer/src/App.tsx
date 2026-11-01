@@ -300,6 +300,7 @@ function TrainingSession({
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
   const [skillsNote, setSkillsNote] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [deriving, setDeriving] = useState(false);
   const [phase, setPhase] = useState("bereit");
   const [runs, setRuns] = useState<LiveRun[]>([]);
   const [steps, setSteps] = useState<StepRecord[]>([]);
@@ -314,6 +315,7 @@ function TrainingSession({
   const feedStick = useRef(true);
   const agentStick = useRef(true);
   const starting = useRef(false);
+  const deriveGen = useRef(0);
   const layoutRef = useRef<HTMLDivElement>(null);
   const panes = usePaneSizes(layoutRef);
 
@@ -530,8 +532,37 @@ function TrainingSession({
     }
   }
 
+  async function deriveFields() {
+    const skillPath = form.skillPath.trim();
+    const fineTune = form.workflow === "train" || form.trainAfterDraft !== false;
+    const model = (fineTune ? form.targetModel : form.optimizerModel).trim();
+    if (!skillPath || form.workflow === "create") {
+      pushFeed({ type: "note", text: "Zuerst einen Skill wählen." });
+      return;
+    }
+    if (!model) {
+      pushFeed({ type: "note", text: "Kein Modell gewählt." });
+      return;
+    }
+    const generation = ++deriveGen.current;
+    setDeriving(true);
+    const label = models.find((item) => item.id === model)?.label ?? model;
+    pushFeed({ type: "note", text: `${label} liest den Skill.` });
+    try {
+      const fields = await api.deriveSkillFields(skillPath, model);
+      if (generation !== deriveGen.current) return;
+      setForm((prev) => ({ ...prev, skillBrief: fields.ziel, auftrag: fields.auftrag }));
+      pushFeed({ type: "note", text: "Ziel und Auftrag stehen in den Feldern." });
+    } catch (err) {
+      if (generation !== deriveGen.current) return;
+      pushFeed({ type: "note", text: messageOf(err) });
+    } finally {
+      if (generation === deriveGen.current) setDeriving(false);
+    }
+  }
+
   async function start() {
-    if (starting.current) return;
+    if (starting.current || deriving) return;
     starting.current = true;
     setRunning(true);
     setNotice(null);
@@ -610,6 +641,8 @@ function TrainingSession({
               onChooseDestination={() => void chooseDestination()}
               onChooseFolder={() => void chooseFolder()}
               onPickRun={() => void pickRun()}
+              onDerive={() => void deriveFields()}
+              deriving={deriving}
             />
           </div>
           <div className="panel-foot">
@@ -621,7 +654,7 @@ function TrainingSession({
               <p className="budget-error" role="status">Laufbudget überschritten. Budget erhöhen oder Schritte und Wiederholungen senken.</p>
             ) : null}
             <div className="actions">
-              <button type="submit" className={running ? "primary busy" : "primary"} disabled={running}>
+              <button type="submit" className={running ? "primary busy" : "primary"} disabled={running || deriving}>
                 {running ? <span className="spin" aria-hidden="true" /> : <PlayIcon />}
                 <span className="label">{running ? phase : "Start"}</span>
               </button>
