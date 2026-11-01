@@ -27,6 +27,7 @@ import { proposalJson } from "./markdown";
 import { TrainerForm } from "./TrainerForm";
 import { bundleChanged, measuredImprovement, reportBody, resultTitle } from "./report";
 import { ResizeHandle, usePaneSizes } from "./ResizeHandle";
+import { runDuration } from "./run-clock";
 
 interface LiveRun {
   runId: string;
@@ -36,6 +37,7 @@ interface LiveRun {
   title?: string;
   blocks: RunBlock[];
   startedAt?: number;
+  endedAt?: number;
   settled?: boolean;
   trajectory?: Trajectory;
 }
@@ -169,6 +171,7 @@ export function App() {
         setRuns((prev) => {
           const index = prev.findIndex((run) => run.runId === event.runId);
           if (index < 0) {
+            const startedAt = Date.now();
             return [
               ...prev,
               {
@@ -178,7 +181,8 @@ export function App() {
                 taskPrompt: event.title ?? event.runId,
                 title: event.title,
                 blocks: event.update ? applyRunUpdate([], event.update) : [],
-                startedAt: Date.now(),
+                startedAt,
+                endedAt: event.settled ? startedAt : undefined,
                 settled: event.settled,
               },
             ];
@@ -190,6 +194,7 @@ export function App() {
                   title: event.title ?? run.title,
                   blocks: event.update ? applyRunUpdate(run.blocks, event.update) : run.blocks,
                   settled: event.settled || run.settled,
+                  endedAt: run.endedAt ?? (event.settled ? Date.now() : undefined),
                 }
               : run,
           );
@@ -709,22 +714,6 @@ function agentLabel(run: LiveRun): string {
   if (run.title) return run.title;
   const where = run.ground === "empty" ? "leeres Repo" : "Projekt";
   return `${run.runId} · ${phaseName(run.phase)} · ${where}`;
-}
-
-function runDuration(run: LiveRun, now: number): string {
-  const ms =
-    run.trajectory && run.trajectory.score.durationMs > 0
-      ? run.trajectory.score.durationMs
-      : run.startedAt
-        ? Math.max(0, now - run.startedAt)
-        : 0;
-  if (ms <= 0) return "";
-  const total = Math.round(ms / 1000);
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  if (minutes < 60) return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${(minutes % 60).toString().padStart(2, "0")}m`;
 }
 
 function stateTone(run: LiveRun): string {
