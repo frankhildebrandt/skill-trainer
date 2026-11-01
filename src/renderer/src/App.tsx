@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { LANGUAGE_NAMES, SUPPORTED_LOCALES, type Locale, type Translate } from "@shared/i18n";
+import { useI18n } from "./i18n";
 import { estimateRuns } from "@shared/estimate";
 import { skillPathForWorkspace } from "@shared/project-skill";
 import { applyRunUpdate, type RunBlock } from "@shared/run-log";
 import { changedLines } from "@shared/text-diff";
 import type {
   AuthStatus,
+  LocalizedLabel,
   ModelOption,
   ProjectSkill,
   SessionSummary,
@@ -39,6 +42,7 @@ interface LiveRun {
   ground: Trajectory["ground"];
   taskPrompt: string;
   title?: string;
+  label?: LocalizedLabel;
   blocks: RunBlock[];
   startedAt?: number;
   endedAt?: number;
@@ -100,7 +104,9 @@ const EMPTY: TrainRequest = {
 };
 
 export function App() {
+  const { locale, setLocale, t, saveError } = useI18n();
   const api = window.trainer;
+  const [loggingIn, setLoggingIn] = useState(false);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [models, setModels] = useState<ModelOption[]>([{ id: "composer-2.5", label: "Composer 2.5" }]);
   const [tabs, setTabs] = useState<TrainingTab[]>([]);
@@ -134,7 +140,7 @@ export function App() {
   }, [api]);
 
   if (!api) {
-    return <main className="fallback">Skill Trainer läuft nur in der Electron-App.</main>;
+    return <main className="fallback">{t("app.fallback")}</main>;
   }
 
   const runningCount = Object.values(snapshots).filter((snapshot) => snapshot.running).length;
@@ -187,7 +193,7 @@ export function App() {
   }
 
   async function login() {
-    setAuth({ state: "logged-out", email: null, via: "none", message: "Browser ist offen …" });
+    setLoggingIn(true);
     try {
       const next = await api.authLogin();
       setAuth(next);
@@ -195,24 +201,32 @@ export function App() {
       if (listed.models.length > 0) setModels(listed.models);
     } catch (err) {
       setAuth({ state: "error", email: null, via: "none", message: messageOf(err) });
+    } finally {
+      setLoggingIn(false);
     }
   }
 
   return (
     <div className={runningCount > 0 ? "app is-running" : "app"}>
       <Backdrop />
+      {saveError ? (
+        <div className="locale-save-error" role="alert">
+          <span>{t("app.localeSaveError")}</span>
+          <button type="button" onClick={() => setLocale(locale)}>{t("app.retry")}</button>
+        </div>
+      ) : null}
       <header className="titlebar">
         <div className="brand">
           <BrandMark />
           <h1>Skill Trainer</h1>
         </div>
-        <div className="global-tabs" role="tablist" aria-label="Trainings">
+        <div className="global-tabs" role="tablist" aria-label={t("app.trainings")}>
           {tabs.map((tab) => {
             const snapshot = snapshots[tab.id];
             const selected = tab.id === activeId;
             const tone = snapshot?.tone ?? "idle";
-            const label = snapshot?.label ?? `Training ${tab.ordinal}`;
-            const status = snapshot?.status ?? "bereit";
+            const label = snapshot?.label ?? t("app.trainingNumber", { n: tab.ordinal });
+            const status = snapshot?.status ?? t("app.ready");
             return (
               <div key={tab.id} className={`global-tab ${tone}${selected ? " on" : ""}`}>
                 <button
@@ -229,36 +243,47 @@ export function App() {
                     <span className="global-tab-status">{status}</span>
                   </span>
                 </button>
-                <button type="button" className="global-tab-x" aria-label={`${label} schließen`} title="Schließen" onClick={() => closeTab(tab.id)}>
+                <button type="button" className="global-tab-x" aria-label={t("app.closeLabel", { label })} title={t("app.close")} onClick={() => closeTab(tab.id)}>
                   <CloseIcon />
                 </button>
               </div>
             );
           })}
           <div className="global-tabs-end">
-            <button type="button" className="global-tab-add" onClick={addTab} aria-label="+ Training" title="Training hinzufügen">
+            <button type="button" className="global-tab-add" onClick={addTab} aria-label={t("app.addTraining")} title={t("app.addTraining")}>
               <PlusIcon />
-              <span className="global-tab-add-label">Training</span>
+              <span className="global-tab-add-label">{t("app.training")}</span>
             </button>
           </div>
         </div>
         <div className="titlebar-end">
+          <select
+            className="language-select"
+            aria-label={t("app.language")}
+            title={t("app.language")}
+            value={locale}
+            onChange={(event) => setLocale(event.target.value as Locale)}
+          >
+            {SUPPORTED_LOCALES.map((language) => (
+              <option key={language} value={language} lang={language}>{LANGUAGE_NAMES[language]}</option>
+            ))}
+          </select>
           <div className="status" aria-live="polite">
             {runningCount > 0 ? (
               <span className="status-pill live">
                 <span className="pulse" aria-hidden="true" />
                 <span className="status-pill-num">{runningCount}</span>
-                {runningCount === 1 ? "Training läuft" : "Trainings laufen"}
+                {t(runningCount === 1 ? "app.oneTrainingRunning" : "app.trainingsRunning")}
               </span>
             ) : null}
           </div>
           <div className="auth">
-            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={authLabel(auth)}>
+            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}>
               <span className="pill-dot" aria-hidden="true" />
-              {authLabel(auth)}
+              {(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}
             </span>
-            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0}>
-              Anmelden
+            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0 || loggingIn}>
+              {t("app.login")}
             </button>
           </div>
         </div>
@@ -294,17 +319,20 @@ function TrainingSession({
   models: ModelOption[];
   onSnapshot: (snapshot: TabSnapshot) => void;
 }) {
+  const { locale, t } = useI18n();
   const api = window.trainer;
   const [form, setForm] = useState<TrainRequest>(initialForm);
-  const [skillName, setSkillName] = useState<string | null>(null);
+  const [skillInfo, setSkillInfo] = useState<{ name: string; fileCount: number } | null>(null);
+  const skillName = skillInfo ? skillLabel(skillInfo, t) : null;
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
   const [skillsNote, setSkillsNote] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [phase, setPhase] = useState("bereit");
+  const [deriving, setDeriving] = useState(false);
+  const [phase, setPhase] = useState("ready");
   const [runs, setRuns] = useState<LiveRun[]>([]);
   const [steps, setSteps] = useState<StepRecord[]>([]);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | { skillPath: string; backupPath: string | null } | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [tabs, setTabs] = useState<string[]>([]);
   const [openRun, setOpenRun] = useState<string | null>(null);
@@ -314,6 +342,7 @@ function TrainingSession({
   const feedStick = useRef(true);
   const agentStick = useRef(true);
   const starting = useRef(false);
+  const deriveGen = useRef(0);
   const layoutRef = useRef<HTMLDivElement>(null);
   const panes = usePaneSizes(layoutRef);
 
@@ -340,14 +369,14 @@ function TrainingSession({
     if (!api) return;
     const skillPath = form.skillPath.trim();
     if (!skillPath || form.workflow === "create") {
-      setSkillName(null);
+      setSkillInfo(null);
       return;
     }
     let cancelled = false;
     void api.readSkill(skillPath).then((preview) => {
-      if (!cancelled) setSkillName(skillLabel(preview));
+      if (!cancelled) setSkillInfo(preview);
     }).catch(() => {
-      if (!cancelled) setSkillName(null);
+      if (!cancelled) setSkillInfo(null);
     });
     return () => {
       cancelled = true;
@@ -366,7 +395,7 @@ function TrainingSession({
     void api.listProjectSkills(workspace).then((skills) => {
       if (cancelled) return;
       setProjectSkills(skills);
-      setSkillsNote(skills.length === 0 ? "Keine SKILL.md in diesem Projekt." : null);
+      setSkillsNote(skills.length === 0 ? t("app.noSkills") : null);
       setForm((prev) => {
         if (prev.workflow === "create" || prev.workspacePath.trim() !== workspace || prev.skillPath.trim() || skills.length !== 1) return prev;
         return { ...prev, skillPath: skills[0]?.root ?? prev.skillPath };
@@ -379,14 +408,14 @@ function TrainingSession({
     return () => {
       cancelled = true;
     };
-  }, [api, form.workspacePath]);
+  }, [api, form.workspacePath, t]);
 
   useEffect(() => {
     if (!api) return;
     return api.onEvent((event) => {
       if (event.sessionId !== sessionId) return;
       if (event.type === "log") pushFeed({ type: "note", text: event.message });
-      if (event.type === "phase") setPhase(phaseLabel(event.phase));
+      if (event.type === "phase") setPhase(event.phase);
       if (event.type === "run_started") {
         setRuns((prev) => [
           ...prev,
@@ -414,6 +443,7 @@ function TrainingSession({
                 ground: "repo",
                 taskPrompt: event.title ?? event.runId,
                 title: event.title,
+                label: event.label,
                 blocks: event.update ? applyRunUpdate([], event.update) : [],
                 startedAt,
                 endedAt: event.settled ? startedAt : undefined,
@@ -426,6 +456,7 @@ function TrainingSession({
               ? {
                   ...run,
                   title: event.title ?? run.title,
+                  label: event.label ?? run.label,
                   blocks: event.update ? applyRunUpdate(run.blocks, event.update) : run.blocks,
                   settled: event.settled || run.settled,
                   endedAt: run.endedAt ?? (event.settled ? Date.now() : undefined),
@@ -461,9 +492,9 @@ function TrainingSession({
     return () => clearInterval(timer);
   }, [anyLive]);
 
-  const tabLabelText = trainingLabel(form, ordinal, skillName);
+  const tabLabelText = trainingLabel(form, ordinal, skillName, t);
   const liveCount = runs.filter((run) => isLive(run)).length;
-  const tabState = trainingStatus(running, phase, summary, liveCount);
+  const tabState = trainingStatus(running, phase, summary, liveCount, locale, t);
   const snapshotRef = useRef(onSnapshot);
   snapshotRef.current = onSnapshot;
   useEffect(() => {
@@ -504,7 +535,7 @@ function TrainingSession({
     try {
       const skills = await api.listProjectSkills(picked);
       setProjectSkills(skills);
-      setSkillsNote(skills.length === 0 ? "Keine SKILL.md in diesem Projekt." : null);
+      setSkillsNote(skills.length === 0 ? t("app.noSkills") : null);
       setForm((prev) => ({
         ...prev,
         workspacePath: picked,
@@ -519,7 +550,7 @@ function TrainingSession({
 
   async function pickRun() {
     if (!form.workspacePath.trim()) {
-      pushFeed({ type: "note", text: "Zuerst einen Projektordner wählen." });
+      pushFeed({ type: "note", text: t("app.chooseProject") });
       return;
     }
     try {
@@ -530,8 +561,37 @@ function TrainingSession({
     }
   }
 
+  async function deriveFields() {
+    const skillPath = form.skillPath.trim();
+    const fineTune = form.workflow === "train" || form.trainAfterDraft !== false;
+    const model = (fineTune ? form.targetModel : form.optimizerModel).trim();
+    if (!skillPath || form.workflow === "create") {
+      pushFeed({ type: "note", text: t("runner.chooseSkill") });
+      return;
+    }
+    if (!model) {
+      pushFeed({ type: "note", text: t("runner.noModel") });
+      return;
+    }
+    const generation = ++deriveGen.current;
+    setDeriving(true);
+    const label = models.find((item) => item.id === model)?.label ?? model;
+    pushFeed({ type: "note", text: t("runner.readingSkill", { model: label }) });
+    try {
+      const fields = await api.deriveSkillFields(skillPath, model);
+      if (generation !== deriveGen.current) return;
+      setForm((prev) => ({ ...prev, skillBrief: fields.ziel, auftrag: fields.auftrag }));
+      pushFeed({ type: "note", text: t("runner.fieldsFilled") });
+    } catch (err) {
+      if (generation !== deriveGen.current) return;
+      pushFeed({ type: "note", text: messageOf(err) });
+    } finally {
+      if (generation === deriveGen.current) setDeriving(false);
+    }
+  }
+
   async function start() {
-    if (starting.current) return;
+    if (starting.current || deriving) return;
     starting.current = true;
     setRunning(true);
     setNotice(null);
@@ -543,12 +603,12 @@ function TrainingSession({
     setOpenRun(null);
     seq.current = 0;
     seenAgents.current = new Set();
-    setPhase("startet");
+    setPhase("starting");
     try {
       await api.start(form, sessionId);
     } catch (err) {
       pushFeed({ type: "note", text: messageOf(err) });
-      setPhase("bereit");
+      setPhase("ready");
     } finally {
       starting.current = false;
       setRunning(false);
@@ -559,7 +619,7 @@ function TrainingSession({
     setNotice(null);
     try {
       const result = await api.writeBack(sessionId);
-      setNotice(`Übernommen nach ${result.skillPath}.${result.backupPath ? ` Backup: ${result.backupPath}` : ""}`);
+      setNotice(result);
     } catch (err) {
       setNotice(messageOf(err));
     }
@@ -610,31 +670,33 @@ function TrainingSession({
               onChooseDestination={() => void chooseDestination()}
               onChooseFolder={() => void chooseFolder()}
               onPickRun={() => void pickRun()}
+              onDerive={() => void deriveFields()}
+              deriving={deriving}
             />
           </div>
           <div className="panel-foot">
             <p className="estimate">
-              Bis zu <strong>{estimate.total}</strong> Agent-Läufe · {estimate.attempts} Training/Gate · {estimate.optimizer} Optimierer
-              {estimate.checks ? ` · ${estimate.checks} Testskript` : ""}
+              {t("app.estimate", { total: estimate.total, attempts: estimate.attempts, optimizer: estimate.optimizer })}
+              {estimate.checks ? ` · ${t("app.checkEstimate", { count: estimate.checks })}` : ""}
             </p>
             {form.runBudget !== null && estimate.total > (form.runBudget ?? 48) ? (
-              <p className="budget-error" role="status">Laufbudget überschritten. Budget erhöhen oder Schritte und Wiederholungen senken.</p>
+              <p className="budget-error" role="status">{t("app.budgetExceeded")}</p>
             ) : null}
             <div className="actions">
-              <button type="submit" className={running ? "primary busy" : "primary"} disabled={running}>
+              <button type="submit" className={running ? "primary busy" : "primary"} disabled={running || deriving}>
                 {running ? <span className="spin" aria-hidden="true" /> : <PlayIcon />}
-                <span className="label">{running ? phase : "Start"}</span>
+                <span className="label">{running ? phaseLabel(phase, t) : t("app.start")}</span>
               </button>
               <button type="button" className="danger" onClick={() => void api.cancel(sessionId)} disabled={!running}>
                 <StopIcon />
-                Abbrechen
+                {t("app.cancel")}
               </button>
             </div>
           </div>
         </form>
 
         <ResizeHandle
-          label="Breite der Einstellungen"
+          label={t("app.settingsWidth")}
           value={panes.sizes.panel}
           min={panes.limits.panel.min}
           max={panes.limits.panel.max}
@@ -645,8 +707,8 @@ function TrainingSession({
         <section className="feed">
           <div className="pane-head">
             <PulseIcon />
-            <span>Verlauf</span>
-            {runs.length > 0 ? <span className="count">{runs.length} Läufe</span> : null}
+            <span>{t("app.history")}</span>
+            {runs.length > 0 ? <span className="count">{t("app.runCount", { count: runs.length })}</span> : null}
           </div>
           <div
             className="sheet"
@@ -660,8 +722,8 @@ function TrainingSession({
           >
             <div className="column">
               {feed.length === 0 ? (
-                <Empty icon={<SparkIcon />} title="Noch kein Lauf.">
-                  Projekt wählen, den Skill daraus nehmen und den Auftrag setzen. Phasen, Agenten und Befunde erscheinen hier.
+                <Empty icon={<SparkIcon />} title={t("app.noRun")}>
+                  {t("app.noRunHelp")}
                 </Empty>
               ) : null}
               {feed.map((item) => {
@@ -684,9 +746,9 @@ function TrainingSession({
                       onClick={() => openAgent(run.runId)}
                     >
                       <LiveMark run={run} />
-                      <span className="agent-name">{agentLabel(run)}</span>
+                      <span className="agent-name">{agentLabel(run, t)}</span>
                       <span className="agent-time">{runDuration(run, now)}</span>
-                      <span className={`agent-state ${stateTone(run)}`}>{runState(run)}</span>
+                      <span className={`agent-state ${stateTone(run)}`}>{runState(run, t)}</span>
                     </button>
                   );
                 }
@@ -700,7 +762,7 @@ function TrainingSession({
                     key={item.id}
                     summary={summary}
                     improved={improved}
-                    notice={notice}
+                    notice={typeof notice === "string" || !notice ? notice : `${t("app.applied", { path: notice.skillPath })}${notice.backupPath ? ` ${t("app.backup", { path: notice.backupPath })}` : ""}`}
                     onApply={() => void writeBack()}
                     onOpen={() => void api.openPath(summary.sessionDir)}
                   />
@@ -711,7 +773,7 @@ function TrainingSession({
         </section>
 
         <ResizeHandle
-          label="Breite des Verlaufs"
+          label={t("app.historyWidth")}
           value={panes.sizes.feed}
           min={panes.limits.feed.min}
           max={panes.limits.feed.max}
@@ -724,7 +786,7 @@ function TrainingSession({
             {tabs.length === 0 ? (
               <span className="tab-hint">
                 <TerminalIcon />
-                Agenten
+                {t("app.agents")}
               </span>
             ) : null}
             {tabs.map((tab) => {
@@ -734,9 +796,9 @@ function TrainingSession({
                 <div key={tab} className={tab === openRun ? "tab on" : "tab"}>
                   <button type="button" role="tab" aria-selected={tab === openRun} onClick={() => setOpenRun(tab)}>
                     {live ? <span className="spin" aria-hidden="true" /> : null}
-                    {run ? tabLabel(run) : tab}
+                    {run ? tabLabel(run, t) : tab}
                   </button>
-                  <button type="button" className="tab-x" aria-label="Tab schließen" onClick={() => closeTab(tab)}>
+                  <button type="button" className="tab-x" aria-label={t("app.closeTab")} onClick={() => closeTab(tab)}>
                     ×
                   </button>
                 </div>
@@ -759,9 +821,9 @@ function TrainingSession({
                   <div className="agent-head">
                     <LiveMark run={activeRun} />
                     <div>
-                      <strong>{agentLabel(activeRun)}</strong>
+                      <strong>{agentLabel(activeRun, t)}</strong>
                       <p>
-                        {runState(activeRun)}
+                        {runState(activeRun, t)}
                         {runDuration(activeRun, now) ? ` · ${runDuration(activeRun, now)}` : ""}
                       </p>
                     </div>
@@ -771,7 +833,7 @@ function TrainingSession({
                       <StreamBlocks blocks={activeRun.blocks} />
                     </div>
                   ) : (
-                    <p className="quiet waiting">Wartet auf die erste Ausgabe.</p>
+                    <p className="quiet waiting">{t("app.waiting")}</p>
                   )}
                   {activeRun.trajectory?.keptWorkspace ? (
                     <button
@@ -780,13 +842,13 @@ function TrainingSession({
                       onClick={() => void api.openPath(activeRun.trajectory!.keptWorkspace!)}
                     >
                       <ExternalIcon />
-                      Kopie öffnen
+                      {t("app.openCopy")}
                     </button>
                   ) : null}
                 </>
               ) : (
-                <Empty icon={<TerminalIcon />} title="Kein Agent geöffnet.">
-                  Klicke einen Lauf im Feed, dann steht sein Log hier.
+                <Empty icon={<TerminalIcon />} title={t("app.noAgent")}>
+                  {t("app.noAgentHelp")}
                 </Empty>
               )}
             </div>
@@ -820,6 +882,7 @@ function Empty({ icon, title, children }: { icon: ReactNode; title: string; chil
 }
 
 function FindingCard({ step }: { step: StepRecord }) {
+  const { locale, t } = useI18n();
   const edits = [
     ...step.applied.map((edit) => `${edit.op}: ${edit.content || edit.target}`),
     ...(step.appliedFiles ?? []).map((edit) => `${edit.op} ${edit.path}: ${edit.content || edit.target || ""}`),
@@ -827,19 +890,19 @@ function FindingCard({ step }: { step: StepRecord }) {
   return (
     <article className={`card enter ${step.accepted ? "kept" : "dropped"}`}>
       <header>
-        <strong>{stepTitle(step)}</strong>
-        <span className={step.accepted ? "tag ok" : "tag"}>{step.accepted ? "übernommen" : "verworfen"}</span>
+        <strong>{stepTitle(step, t)}</strong>
+        <span className={step.accepted ? "tag ok" : "tag"}>{t(step.accepted ? "app.accepted" : "app.rejected")}</span>
       </header>
       {step.reasoning ? <MarkdownView text={step.reasoning} /> : null}
       {step.selectionAfter ? (
         <div className="score">
           <ScoreBar before={step.selectionBefore.gate} after={step.selectionAfter.gate} />
           <p className="mono">
-            {`${pct(step.selectionBefore.gate)} → ${pct(step.selectionAfter.gate)} · ${step.selectionAfter.passes}/${step.selectionAfter.runs} grün`}
+            {`${pct(step.selectionBefore.gate, locale)} → ${pct(step.selectionAfter.gate, locale)} · ${t("app.passed", { passes: step.selectionAfter.passes, runs: step.selectionAfter.runs })}`}
           </p>
         </div>
       ) : (
-        <p className="mono">kein Gate</p>
+        <p className="mono">{t("app.noGate")}</p>
       )}
       {edits.length > 0 ? (
         <pre>
@@ -863,49 +926,50 @@ function Report({
   onApply: () => void;
   onOpen: () => void;
 }) {
+  const { locale, t } = useI18n();
   const skillDiff = changedLines(summary.originalSkill, summary.bestSkill);
-  const files = fileChanges(summary);
+  const files = fileChanges(summary, t);
   const accepted = summary.steps.filter((step) => step.accepted && step.kind !== "baseline");
   return (
     <article className={improved ? "card report enter improved" : "card report enter"}>
       <header>
         <strong>
           <SparkIcon />
-          Bericht
+          {t("app.report")}
         </strong>
-        <span className={measuredImprovement(summary) ? "tag ok" : "tag"}>{resultTitle(summary)}</span>
+        <span className={measuredImprovement(summary) ? "tag ok" : "tag"}>{resultTitle(summary, locale)}</span>
       </header>
-      <MarkdownView text={reportBody(summary)} />
+      <MarkdownView text={reportBody(summary, locale)} />
       {summary.best.runs > 0 ? <ScoreBar before={summary.baseline.gate} after={summary.best.gate} /> : null}
-      <h3>Änderungen</h3>
+      <h3>{t("app.changes")}</h3>
       {skillDiff ? (
         <pre>
           <code>{`SKILL.md\n${skillDiff}`}</code>
         </pre>
       ) : (
-        <p className="quiet">SKILL.md unverändert.</p>
+        <p className="quiet">{t("app.unchanged")}</p>
       )}
       {files.map((file) => (
         <pre key={file.path}>
           <code>{`${file.path}\n${file.diff}`}</code>
         </pre>
       ))}
-      <h3>Optimierungen</h3>
-      {accepted.length === 0 ? <p className="quiet">Keine zusätzliche Optimierung durch das Gate übernommen.</p> : null}
+      <h3>{t("app.optimizations")}</h3>
+      {accepted.length === 0 ? <p className="quiet">{t("app.noOptimization")}</p> : null}
       {accepted.map((step) => (
         <div key={`${step.kind}-${step.index}`} className="opt">
-          <strong>{stepTitle(step)}</strong>
+          <strong>{stepTitle(step, t)}</strong>
           {step.reasoning ? <MarkdownView text={step.reasoning} /> : null}
         </div>
       ))}
       <div className="actions">
         <button type="button" className="primary" disabled={!improved} onClick={onApply}>
           <CheckIcon />
-          Änderungen übernehmen
+          {t("app.applyChanges")}
         </button>
         <button type="button" onClick={onOpen}>
           <ExternalIcon />
-          Sitzung öffnen
+          {t("app.openSession")}
         </button>
       </div>
       {notice ? <p className="quiet notice enter">{notice}</p> : null}
@@ -934,14 +998,15 @@ function isLive(run: LiveRun): boolean {
   return !run.trajectory && !run.settled;
 }
 
-function tabLabel(run: LiveRun): string {
-  return run.title ?? run.runId;
+function tabLabel(run: LiveRun, t: Translate): string {
+  return run.label ? t(run.label.key, run.label.values) : run.title ?? run.runId;
 }
 
-function agentLabel(run: LiveRun): string {
+function agentLabel(run: LiveRun, t: Translate): string {
+  if (run.label) return t(run.label.key, run.label.values);
   if (run.title) return run.title;
-  const where = run.ground === "empty" ? "leeres Repo" : "Projekt";
-  return `${run.runId} · ${phaseName(run.phase)} · ${where}`;
+  const where = t(run.ground === "empty" ? "app.emptyRepo" : "app.project");
+  return `${run.runId} · ${phaseName(run.phase, t)} · ${where}`;
 }
 
 function stateTone(run: LiveRun): string {
@@ -950,20 +1015,21 @@ function stateTone(run: LiveRun): string {
   return run.trajectory.score.hard >= 1 ? "good" : "bad";
 }
 
-function runState(run: LiveRun): string {
-  if (run.trajectory) return scoreLabel(run.trajectory);
-  if (run.settled) return "fertig";
-  return "läuft";
+function runState(run: LiveRun, t: Translate): string {
+  if (run.trajectory) return scoreLabel(run.trajectory, t);
+  if (run.settled) return t("app.finished");
+  return t("app.running");
 }
 
-function phaseName(phase: Trajectory["phase"]): string {
-  if (phase === "baseline") return "Baseline";
-  if (phase === "train") return "Training";
-  if (phase === "gate") return "Gate";
-  return "Slow";
+function phaseName(phase: Trajectory["phase"], t: Translate): string {
+  if (phase === "baseline") return t("app.baseline");
+  if (phase === "train") return t("app.training");
+  if (phase === "gate") return t("app.gate");
+  return t("app.slow");
 }
 
 function StreamBlocks({ blocks }: { blocks: RunBlock[] }) {
+  const { t } = useI18n();
   const joined = blocks.filter((block) => block.kind === "text").map((block) => block.text).join("");
   const proposal = readProposal(joined);
   const started = !proposal && proposalStarted(joined);
@@ -973,12 +1039,13 @@ function StreamBlocks({ blocks }: { blocks: RunBlock[] }) {
     if (textShown) return null;
     textShown = true;
     if (proposal) return <ProposalView key="proposal" proposal={proposal} />;
-    if (started) return <p key="draft" className="note">Vorschlag wird geschrieben…</p>;
+    if (started) return <p key="draft" className="note">{t("app.writingProposal")}</p>;
     return <BlockView key={index} block={block} />;
   });
 }
 
 function BlockView({ block }: { block: RunBlock }) {
+  const { t } = useI18n();
   if (block.kind === "thinking") {
     return (
       <div className="think">
@@ -990,11 +1057,11 @@ function BlockView({ block }: { block: RunBlock }) {
   if (block.kind === "text") {
     const proposal = readProposal(block.text);
     if (proposal) return <ProposalView proposal={proposal} />;
-    if (proposalStarted(block.text)) return <p className="note">Vorschlag wird geschrieben…</p>;
+    if (proposalStarted(block.text)) return <p className="note">{t("app.writingProposal")}</p>;
     return <MarkdownView text={block.text} />;
   }
   if (block.kind === "tool") {
-    const state = block.status === "running" ? "läuft" : block.status === "error" ? "Fehler" : "fertig";
+    const state = t(block.status === "running" ? "app.running" : block.status === "error" ? "app.error" : "app.finished");
     return (
       <details className="tool">
         <summary>
@@ -1010,18 +1077,19 @@ function BlockView({ block }: { block: RunBlock }) {
 }
 
 function ProposalView({ proposal }: { proposal: ShownProposal }) {
+  const { t } = useI18n();
   return (
     <article className="proposal-card">
-      <header>Vorschlag · {proposal.files.length} {proposal.files.length === 1 ? "Datei" : "Dateien"} · {proposal.edits.length} Textänderungen</header>
+      <header>{t("app.proposalSummary", { files: t(proposal.files.length === 1 ? "app.oneFile" : "app.files", { count: proposal.files.length }), edits: proposal.edits.length })}</header>
       {proposal.reasoning ? (
         <section>
-          <h3>Begründung</h3>
+          <h3>{t("app.reasoning")}</h3>
           <MarkdownView text={proposal.reasoning} />
         </section>
       ) : null}
       {proposal.slow ? (
         <section>
-          <h3>Slow-Update</h3>
+          <h3>{t("app.slow")}</h3>
           <MarkdownView text={proposal.slow} />
         </section>
       ) : null}
@@ -1030,7 +1098,7 @@ function ProposalView({ proposal }: { proposal: ShownProposal }) {
       ))}
       {proposal.edits.map((edit, index) => (
         <section className="edit" key={`${edit.op}-${index}`}>
-          <h3>{opLabel(edit.op)} in SKILL.md</h3>
+          <h3>{t("app.editInSkill", { operation: opLabel(edit.op, t) })}</h3>
           {edit.why ? <p className="why">{edit.why}</p> : null}
           {edit.target ? <pre className="body">{edit.target}</pre> : null}
           {edit.content ? <pre className="body">{edit.content}</pre> : null}
@@ -1041,37 +1109,38 @@ function ProposalView({ proposal }: { proposal: ShownProposal }) {
 }
 
 function FileView({ file }: { file: ShownFile }) {
+  const { t } = useI18n();
   const frontmatter = file.path.endsWith(".md") ? file.content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) : null;
   const body = frontmatter ? file.content.slice(frontmatter[0].length) : file.content;
   return (
     <section className="file">
       <header>
-        <code>{opLabel(file.op)}</code>
+        <code>{opLabel(file.op, t)}</code>
         <span className="path">{file.path}</span>
-        {file.executable ? <span>ausführbar</span> : null}
+        {file.executable ? <span>{t("app.executable")}</span> : null}
       </header>
       {file.why ? <p className="why">{file.why}</p> : null}
-      {file.op === "delete" ? <p className="why">Datei wird gelöscht.</p> : null}
+      {file.op === "delete" ? <p className="why">{t("app.fileDeleted")}</p> : null}
       {frontmatter?.[1] ? <pre className="body">{frontmatter[1]}</pre> : null}
       {body ? (file.path.endsWith(".md") ? <MarkdownView text={body} /> : <pre className="body">{body}</pre>) : null}
     </section>
   );
 }
 
-function opLabel(op: string): string {
-  if (op === "write") return "schreiben";
-  if (op === "replace") return "ersetzen";
-  if (op === "delete") return "löschen";
-  if (op === "append") return "anhängen";
-  if (op === "insert_after") return "einfügen";
+function opLabel(op: string, t: Translate): string {
+  if (op === "write") return t("app.write");
+  if (op === "replace") return t("app.replace");
+  if (op === "delete") return t("app.delete");
+  if (op === "append") return t("app.append");
+  if (op === "insert_after") return t("app.insert");
   return op;
 }
 
-function skillLabel(preview: { name: string; fileCount: number }): string {
-  return `${preview.name} · ${preview.fileCount} ${preview.fileCount === 1 ? "Datei" : "Dateien"}`;
+function skillLabel(preview: { name: string; fileCount: number }, t: Translate): string {
+  return `${preview.name} · ${t(preview.fileCount === 1 ? "app.oneFile" : "app.files", { count: preview.fileCount })}`;
 }
 
-function fileChanges(summary: SessionSummary): { path: string; diff: string }[] {
+function fileChanges(summary: SessionSummary, t: Translate): { path: string; diff: string }[] {
   const left = summary.originalFiles ?? [];
   const right = summary.bestFiles ?? [];
   const paths = [...new Set([...left.map((file) => file.path), ...right.map((file) => file.path)])].sort();
@@ -1082,13 +1151,13 @@ function fileChanges(summary: SessionSummary): { path: string; diff: string }[] 
     const after = right.find((file) => file.path === path);
     if (sameFile(before, after)) continue;
     if (!before?.text && !after?.text && (before?.base64 || after?.base64)) {
-      changes.push({ path, diff: "Binärdatei geändert." });
+      changes.push({ path, diff: t("app.binaryChanged") });
       continue;
     }
     const mode = Boolean(before?.executable) !== Boolean(after?.executable)
-      ? `\nAusführbar: ${after?.executable ? "ja" : "nein"}`
+      ? `\n${t("app.executableMode", { value: t(after?.executable ? "app.yes" : "app.no") })}`
       : "";
-    changes.push({ path, diff: `${changedLines(before?.text ?? "", after?.text ?? "") || "geändert"}${mode}` });
+    changes.push({ path, diff: `${changedLines(before?.text ?? "", after?.text ?? "") || t("app.changed")}${mode}` });
   }
   return changes;
 }
@@ -1097,13 +1166,13 @@ function sameFile(left: SkillFile | undefined, right: SkillFile | undefined): bo
   return (left?.text ?? "") === (right?.text ?? "") && (left?.base64 ?? "") === (right?.base64 ?? "") && Boolean(left?.executable) === Boolean(right?.executable);
 }
 
-function trainingLabel(form: TrainRequest, ordinal: number, skillName: string | null): string {
+function trainingLabel(form: TrainRequest, ordinal: number, skillName: string | null, t: Translate): string {
   const created = form.skillName?.trim();
   if (form.workflow === "create" && created) return created;
   if (skillName) return skillName.split(" · ")[0] || skillName;
   const skill = form.skillPath.trim().split(/[/\\]/).filter(Boolean).pop();
   if (skill) return skill;
-  return `Training ${ordinal}`;
+  return t("app.trainingNumber", { n: ordinal });
 }
 
 function trainingStatus(
@@ -1111,55 +1180,59 @@ function trainingStatus(
   phase: string,
   summary: SessionSummary | null,
   liveCount: number,
+  locale: Locale,
+  t: Translate,
 ): { status: string; tone: "idle" | "live" | "good" | "bad" } {
   if (running) {
-    const count = liveCount > 0 ? ` · ${liveCount} aktiv` : "";
-    return { status: `${phase}${count}`, tone: "live" };
+    const count = liveCount > 0 ? ` · ${t("app.activeCount", { count: liveCount })}` : "";
+    return { status: `${phaseLabel(phase, t)}${count}`, tone: "live" };
   }
-  if (!summary) return { status: "bereit", tone: "idle" };
-  if (summary.cancelled) return { status: "abgebrochen", tone: "bad" };
-  if (summary.error) return { status: "Fehler", tone: "bad" };
-  if (measuredImprovement(summary) || bundleChanged(summary)) return { status: resultTitle(summary), tone: "good" };
-  return { status: resultTitle(summary), tone: "idle" };
+  if (!summary) return { status: t("app.ready"), tone: "idle" };
+  if (summary.cancelled) return { status: t("app.cancelled"), tone: "bad" };
+  if (summary.error) return { status: t("app.error"), tone: "bad" };
+  if (measuredImprovement(summary) || bundleChanged(summary)) return { status: resultTitle(summary, locale), tone: "good" };
+  return { status: resultTitle(summary, locale), tone: "idle" };
 }
 
-function phaseLabel(phase: string): string {
-  if (phase === "create") return "Skill erstellen";
-  if (phase === "pretrain") return "Vortraining";
-  if (phase === "checks") return "Testskript";
-  if (phase === "preflight") return "Vorprüfung";
-  if (phase === "baseline") return "Baseline";
-  if (phase === "slow") return "Slow-Update";
+function phaseLabel(phase: string, t: Translate): string {
+  if (phase === "ready") return t("app.ready");
+  if (phase === "starting") return t("app.starting");
+  if (phase === "create") return t("app.createSkill");
+  if (phase === "pretrain") return t("app.pretrain");
+  if (phase === "checks") return t("app.testScript");
+  if (phase === "preflight") return t("app.preflight");
+  if (phase === "baseline") return t("app.baseline");
+  if (phase === "slow") return t("app.slow");
   const [kind, n] = phase.split(":");
-  if (kind === "train") return `Training ${n}`;
-  if (kind === "optimize") return `Optimierer ${n}`;
-  if (kind === "gate") return `Gate ${n}`;
+  if (kind === "train") return t("app.trainingNumber", { n: n ?? "" });
+  if (kind === "optimize") return t("app.optimizerNumber", { n: n ?? "" });
+  if (kind === "gate") return t("app.gateNumber", { n: n ?? "" });
   return phase;
 }
 
-function stepTitle(step: StepRecord): string {
-  if (step.kind === "baseline") return "Baseline";
-  if (step.kind === "slow") return "Slow-Update";
-  return `Schritt ${step.index}`;
+function stepTitle(step: StepRecord, t: Translate): string {
+  if (step.kind === "baseline") return t("app.baseline");
+  if (step.kind === "slow") return t("app.slow");
+  return t("app.step", { n: step.index });
 }
 
-function scoreLabel(run: Trajectory): string {
-  if (run.score.status === "cancelled") return "abgebrochen";
-  if (run.score.hard >= 1) return `grün · ${run.score.toolCalls} Werkzeuge`;
-  return `rot · Exit ${run.score.verifyExitCode ?? "—"}`;
+function scoreLabel(run: Trajectory, t: Translate): string {
+  if (run.score.status === "cancelled") return t("app.cancelled");
+  if (run.score.hard >= 1) return t("app.greenTools", { count: run.score.toolCalls });
+  return t("app.redExit", { code: run.score.verifyExitCode ?? "—" });
 }
 
-function authLabel(auth: AuthStatus | null): string {
+function authLabel(auth: AuthStatus | null, t: Translate): string {
   if (!auth) return "…";
   if (auth.message && auth.state !== "logged-in") return auth.message;
-  if (auth.state === "logged-in" && auth.via === "env") return "API-Key";
-  if (auth.state === "logged-in") return auth.email ?? "angemeldet";
-  if (auth.state === "error") return "Fehler";
-  return "abgemeldet";
+  if (auth.state === "logged-in" && auth.via === "env") return t("app.apiKey");
+  if (auth.state === "logged-in") return auth.email ?? t("app.signedIn");
+  if (auth.state === "error") return t("app.error");
+  return t("app.signedOut");
 }
 
-function pct(value: number): string {
-  return `${(value * 100).toFixed(1)}`;
+function pct(value: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value * 100);
 }
 
 function clampPct(value: number): number {

@@ -3,6 +3,7 @@ import { matchesSkill } from "@shared/project-skill";
 import type { ModelOption, ProjectSkill, TrainRequest } from "@shared/types";
 import { BudgetFields } from "./BudgetFields";
 import { NumberField } from "./NumberField";
+import { useI18n } from "./i18n";
 
 export function TrainerForm({
   form,
@@ -16,9 +17,12 @@ export function TrainerForm({
   onChooseDestination,
   onChooseFolder,
   onPickRun,
+  onDerive,
+  deriving,
 }: {
   form: TrainRequest;
   running: boolean;
+  deriving: boolean;
   models: ModelOption[];
   skillName: string | null;
   projectSkills: ProjectSkill[];
@@ -28,11 +32,16 @@ export function TrainerForm({
   onChooseDestination: () => void;
   onChooseFolder: () => void;
   onPickRun: () => void;
+  onDerive: () => void;
 }) {
+  const { t } = useI18n();
   const paths = useRef({ create: "", existing: "" });
   const workflow = form.workflow ?? "train";
   const draft = workflow !== "train";
   const fineTune = !draft || form.trainAfterDraft !== false;
+  const locked = running || deriving;
+  const deriveModelId = fineTune ? form.targetModel : form.optimizerModel;
+  const deriveModel = models.find((model) => model.id === deriveModelId)?.label ?? deriveModelId;
 
   function changeWorkflow(next: "train" | "pretrain" | "create") {
     const currentKey = workflow === "create" ? "create" : "existing";
@@ -44,73 +53,89 @@ export function TrainerForm({
   return (
     <>
       <label>
-        Workflow
-        <select value={workflow} disabled={running} onChange={(event) => changeWorkflow(event.target.value as typeof workflow)}>
-          <option value="train">Fine-Tuning</option>
-          <option value="pretrain">Vortraining</option>
-          <option value="create">Create Skill</option>
+        {t("form.workflow")}
+        <select value={workflow} disabled={locked} onChange={(event) => changeWorkflow(event.target.value as typeof workflow)}>
+          <option value="train">{t("form.fineTune")}</option>
+          <option value="pretrain">{t("form.pretrain")}</option>
+          <option value="create">{t("form.create")}</option>
         </select>
       </label>
       {workflow === "create" ? (
         <>
           <label>
-            Skill-Name
+            {t("form.skillName")}
             <input
               value={form.skillName ?? ""}
-              disabled={running}
+              disabled={locked}
               required
               pattern="[a-z0-9]+(-[a-z0-9]+)*"
-              placeholder="mein-neuer-skill"
+              placeholder={t("form.skillNamePlaceholder")}
               onChange={(event) => onChange({ ...form, skillName: event.target.value })}
             />
           </label>
           <label>
-            Neuer Skill-Ordner
+            {t("form.newSkillFolder")}
             <div className="row">
               <input
                 value={form.skillPath}
-                disabled={running}
+                disabled={locked}
                 required
-                placeholder="Pfad zum neuen Skill-Ordner"
+                placeholder={t("form.newSkillPath")}
                 onChange={(event) => onChange({ ...form, skillPath: event.target.value })}
               />
-              <button type="button" onClick={onChooseDestination} disabled={running}>Wählen</button>
+              <button type="button" onClick={onChooseDestination} disabled={locked}>{t("form.choose")}</button>
             </div>
-            <small>Der Ordner wird beim Übernehmen des Ergebnisses erstellt.</small>
+            <small>{t("form.createFolderHint")}</small>
           </label>
         </>
       ) : null}
       {fineTune ? (
         <label>
-          Projekt
+          {t("form.project")}
           <div className="row">
-            <input readOnly value={form.workspacePath} placeholder="Projektordner" />
-            <button type="button" onClick={onChooseFolder} disabled={running}>Wählen</button>
+            <input readOnly value={form.workspacePath} placeholder={t("form.projectFolder")} />
+            <button type="button" onClick={onChooseFolder} disabled={locked}>{t("form.choose")}</button>
           </div>
-          <small>Läufe schreiben nur in eine eigene Kopie. Dieser Ordner und sein Git bleiben unverändert.</small>
+          <small>{t("form.isolationHint")}</small>
         </label>
       ) : null}
       {workflow !== "create" ? (
-        <SkillField
-          form={form}
-          running={running}
-          skillName={skillName}
-          projectSkills={projectSkills}
-          skillsNote={skillsNote}
-          onChange={onChange}
-          onChooseSkill={onChooseSkill}
-        />
+        <>
+          <SkillField
+            form={form}
+            running={locked}
+            skillName={skillName}
+            projectSkills={projectSkills}
+            skillsNote={skillsNote}
+            onChange={onChange}
+            onChooseSkill={onChooseSkill}
+          />
+          <div className="field">
+            <div className="field-head">
+              <span>{t("form.fromSkill")}</span>
+              <button
+                type="button"
+                onClick={onDerive}
+                disabled={locked || !form.skillPath.trim() || !deriveModelId.trim()}
+                title={form.skillPath.trim() ? t("form.deriveTitle", { model: deriveModel }) : t("form.chooseSkillFirst")}
+              >
+                {t(deriving ? "form.analyzing" : "form.fillWithModel")}
+              </button>
+            </div>
+            <small>{t("form.deriveHint", { model: deriveModel })}</small>
+          </div>
+        </>
       ) : null}
       {draft ? (
         <>
           <label>
-            {workflow === "create" ? "Skill beschreiben" : "Ziel des Vortrainings"}
+            {workflow === "create" ? t("form.describeSkill") : t("form.pretrainGoal")}
             <textarea
               value={form.skillBrief ?? ""}
-              disabled={running}
+              disabled={locked}
               required
               rows={5}
-              placeholder="Einsatzfälle, gewünschter Ablauf, Referenzen und Skripte"
+              placeholder={t("form.briefPlaceholder")}
               onChange={(event) => onChange({ ...form, skillBrief: event.target.value })}
             />
           </label>
@@ -118,115 +143,115 @@ export function TrainerForm({
             <input
               type="checkbox"
               checked={form.trainAfterDraft !== false}
-              disabled={running}
+              disabled={locked}
               onChange={(event) => onChange({ ...form, trainAfterDraft: event.target.checked })}
             />
-            Anschließend Fine-Tuning
+            {t("form.fineTuneAfter")}
           </label>
-          <p className="quiet">Der Entwurf wird vor dem Fine-Tuning vorbereitet. Seine Qualität ist erst durch Trainingsläufe messbar.</p>
+          <p className="quiet">{t("form.draftHint")}</p>
         </>
       ) : null}
       {fineTune ? (
         <>
           <div className="field">
             <div className="field-head">
-              <span>Trainingsauftrag</span>
+              <span>{t("form.task")}</span>
               <button
                 type="button"
                 onClick={onPickRun}
-                disabled={running || !form.workspacePath.trim()}
-                title={form.workspacePath.trim() ? "Lokale und Cloud-Agents dieses Repos" : "Zuerst einen Projektordner wählen"}
+                disabled={locked || !form.workspacePath.trim()}
+                title={form.workspacePath.trim() ? t("form.runTitle") : t("form.chooseProjectFirst")}
               >
-                Aus Cursor-Läufen
+                {t("form.fromRuns")}
               </button>
             </div>
             <textarea
               value={form.auftrag}
-              disabled={running}
+              disabled={locked}
               required
               onChange={(event) => onChange({ ...form, auftrag: event.target.value })}
               rows={4}
-              placeholder="Konkrete Aufgabe, an der der Skill geprüft wird"
+              placeholder={t("form.taskPlaceholder")}
             />
-            <small>Oder einen vorhandenen Lauf dieses Repos auswählen. Die Suche geht durch Auftrag und Antworten.</small>
+            <small>{t("form.runHint")}</small>
           </div>
           <label>
-            Weitere Aufträge
-            <textarea value={form.extraTasks} disabled={running} onChange={(event) => onChange({ ...form, extraTasks: event.target.value })} rows={2} placeholder="Eine Zeile pro Variante" />
+            {t("form.extraTasks")}
+            <textarea value={form.extraTasks} disabled={locked} onChange={(event) => onChange({ ...form, extraTasks: event.target.value })} rows={2} placeholder={t("form.extraPlaceholder")} />
           </label>
-          <fieldset className="choice" disabled={running}>
-            <legend>Prüfung</legend>
+          <fieldset className="choice" disabled={locked}>
+            <legend>{t("form.verification")}</legend>
             <label className="check">
               <input type="radio" name="verifyMode" checked={form.verifyMode === "command"} onChange={() => onChange({ ...form, verifyMode: "command" })} />
-              Testbefehl
+              {t("form.testCommand")}
             </label>
             <label className="check">
               <input type="radio" name="verifyMode" checked={form.verifyMode === "agent"} onChange={() => onChange({ ...form, verifyMode: "agent" })} />
-              Agent schreibt das Testskript
+              {t("form.agentCheck")}
             </label>
           </fieldset>
           {form.verifyMode === "command" ? (
             <label>
-              Testbefehl
-              <input value={form.verifyCommand} required disabled={running} onChange={(event) => onChange({ ...form, verifyCommand: event.target.value })} placeholder="npm test" />
+              {t("form.testCommand")}
+              <input value={form.verifyCommand} required disabled={locked} onChange={(event) => onChange({ ...form, verifyCommand: event.target.value })} placeholder="npm test" />
             </label>
           ) : null}
         </>
       ) : null}
-      <fieldset className="choice" disabled={running}>
-        <legend>Ziel</legend>
+      <fieldset className="choice" disabled={locked}>
+        <legend>{t("form.scope")}</legend>
         <label className="check">
           <input type="radio" name="skillScope" checked={form.skillScope !== "specific"} onChange={() => onChange({ ...form, skillScope: "general" })} />
-          Allgemein
+          {t("form.general")}
         </label>
         <label className="check">
           <input type="radio" name="skillScope" checked={form.skillScope === "specific"} onChange={() => onChange({ ...form, skillScope: "specific" })} />
-          {fineTune ? "Dieser Auftrag" : "Dieser Zweck"}
+          {fineTune ? t("form.thisTask") : t("form.thisPurpose")}
         </label>
         {workflow === "train" ? (
           <label>
-            In eigenen Worten
+            {t("form.ownWords")}
             <textarea
               value={form.skillBrief ?? ""}
-              disabled={running}
+              disabled={locked}
               rows={3}
-              placeholder="Worauf der Skill hinaus soll"
+              placeholder={t("form.goalPlaceholder")}
               onChange={(event) => onChange({ ...form, skillBrief: event.target.value })}
             />
           </label>
         ) : null}
       </fieldset>
       <div className="grid">
-        {fineTune ? <ModelField label="Zielmodell" models={models} value={form.targetModel} disabled={running} onChange={(targetModel) => onChange({ ...form, targetModel })} /> : null}
-        <ModelField label="Optimierer" models={models} value={form.optimizerModel} disabled={running} onChange={(optimizerModel) => onChange({ ...form, optimizerModel })} />
+        {fineTune ? <ModelField label={t("form.targetModel")} models={models} value={form.targetModel} disabled={locked} onChange={(targetModel) => onChange({ ...form, targetModel })} /> : null}
+        <ModelField label={t("form.optimizer")} models={models} value={form.optimizerModel} disabled={locked} onChange={(optimizerModel) => onChange({ ...form, optimizerModel })} />
       </div>
       {fineTune ? (
         <>
           <div className="grid nums">
-            <NumberField label="Schritte" value={form.steps} disabled={running} onChange={(steps) => onChange({ ...form, steps })} />
-            <NumberField label="Training" value={form.trainBatch} disabled={running} onChange={(trainBatch) => onChange({ ...form, trainBatch })} />
-            <NumberField label="Gate" value={form.selectionRepeats} disabled={running} onChange={(selectionRepeats) => onChange({ ...form, selectionRepeats })} />
-            <NumberField label="Parallel" value={form.concurrency} disabled={running} onChange={(concurrency) => onChange({ ...form, concurrency })} />
+            <NumberField label={t("form.steps")} value={form.steps} disabled={locked} onChange={(steps) => onChange({ ...form, steps })} />
+            <NumberField label={t("form.training")} value={form.trainBatch} disabled={locked} onChange={(trainBatch) => onChange({ ...form, trainBatch })} />
+            <NumberField label={t("form.gate")} value={form.selectionRepeats} disabled={locked} onChange={(selectionRepeats) => onChange({ ...form, selectionRepeats })} />
+            <NumberField label={t("form.parallel")} value={form.concurrency} disabled={locked} onChange={(concurrency) => onChange({ ...form, concurrency })} />
           </div>
           <label className="check">
-            <input type="checkbox" checked={form.gateOnEmptyRepo} disabled={running} onChange={(event) => onChange({ ...form, gateOnEmptyRepo: event.target.checked })} />
-            Gate auf leerem Repository
+            <input type="checkbox" checked={form.gateOnEmptyRepo} disabled={locked} onChange={(event) => onChange({ ...form, gateOnEmptyRepo: event.target.checked })} />
+            {t("form.emptyGate")}
           </label>
           <label className="check">
-            <input type="checkbox" checked={form.slowUpdate} disabled={running} onChange={(event) => onChange({ ...form, slowUpdate: event.target.checked })} />
-            Slow-Update
+            <input type="checkbox" checked={form.slowUpdate} disabled={locked} onChange={(event) => onChange({ ...form, slowUpdate: event.target.checked })} />
+            {t("form.slowUpdate")}
           </label>
           <details className="settings-details">
-            <summary>Zeitlimits</summary>
+            <summary>{t("form.timeouts")}</summary>
             <div className="grid">
-              <NumberField label="Lauf (Minuten)" value={form.attemptTimeoutMin} disabled={running} onChange={(attemptTimeoutMin) => onChange({ ...form, attemptTimeoutMin })} />
-              <NumberField label="Prüfung (Sekunden)" value={form.verifyTimeoutSec} disabled={running} onChange={(verifyTimeoutSec) => onChange({ ...form, verifyTimeoutSec })} />
+              <NumberField label={t("form.attemptMinutes")} value={form.attemptTimeoutMin} disabled={locked} onChange={(attemptTimeoutMin) => onChange({ ...form, attemptTimeoutMin })} />
+              <NumberField label={t("form.verifySeconds")} value={form.verifyTimeoutSec} disabled={locked} onChange={(verifyTimeoutSec) => onChange({ ...form, verifyTimeoutSec })} />
             </div>
           </details>
         </>
       ) : null}
-      {!form.budget?.unlimited ? <NumberField label="Lernrate (Text-Edits)" value={form.learningRate} disabled={running} onChange={(learningRate) => onChange({ ...form, learningRate })} /> : null}
-      <BudgetFields form={form} running={running} onChange={onChange} />
+      {!form.budget?.unlimited ? <NumberField label={t("form.learningRate")} value={form.learningRate} disabled={locked} onChange={(learningRate) => onChange({ ...form, learningRate })} /> : null}
+      <BudgetFields form={form} running={locked} onChange={onChange} />
     </>
   );
 }
@@ -248,17 +273,18 @@ function SkillField({
   onChange: (form: TrainRequest) => void;
   onChooseSkill: () => void;
 }) {
+  const { t } = useI18n();
   const selected = projectSkills.find((skill) => matchesSkill(form.skillPath, skill.root))?.root ?? "";
   return (
     <label>
-      Skill
+      {t("form.skill")}
       {form.workspacePath.trim() ? (
         <select
           value={selected}
           disabled={running || projectSkills.length === 0}
           onChange={(event) => onChange({ ...form, skillPath: event.target.value })}
         >
-          <option value="">{projectSkills.length === 0 ? "Kein Skill im Projekt" : "Skill aus dem Projekt"}</option>
+          <option value="">{projectSkills.length === 0 ? t("form.noProjectSkill") : t("form.projectSkill")}</option>
           {projectSkills.map((skill) => (
             <option key={skill.root} value={skill.root}>
               {skill.name} · {skill.relative}
@@ -267,8 +293,8 @@ function SkillField({
         </select>
       ) : null}
       <div className="row">
-        <input readOnly value={form.skillPath} placeholder="Ordner oder SKILL.md" />
-        <button type="button" onClick={onChooseSkill} disabled={running}>Wählen</button>
+        <input readOnly value={form.skillPath} placeholder={t("form.skillPath")} />
+        <button type="button" onClick={onChooseSkill} disabled={running}>{t("form.choose")}</button>
       </div>
       {skillName ? <small>{skillName}</small> : null}
       {skillsNote ? <small>{skillsNote}</small> : null}

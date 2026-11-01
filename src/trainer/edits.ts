@@ -1,3 +1,4 @@
+import { translate as translateMessage, type Translate } from "../shared/i18n";
 import type { SkillEdit, SkippedEdit } from "../shared/types";
 
 export const SLOW_START = "<!-- skill-trainer:slow -->";
@@ -7,6 +8,7 @@ const MAX_EDIT_CHARS = 1800;
 const MAX_ADDED_CHARS = 2500;
 
 export interface ApplyOptions {
+  translate?: Translate;
   limit: number;
   maxAddedChars?: number;
   maxEditChars?: number;
@@ -20,6 +22,7 @@ export interface ApplyResult {
 }
 
 export function applyEdits(skill: string, edits: SkillEdit[], options: ApplyOptions): ApplyResult {
+  const t: Translate = options.translate ?? ((key, values) => translateMessage("de", key, values));
   const limit = Math.max(0, options.limit);
   const maxAdded = options.maxAddedChars ?? MAX_ADDED_CHARS;
   const maxEditChars = options.maxEditChars ?? MAX_EDIT_CHARS;
@@ -30,10 +33,10 @@ export function applyEdits(skill: string, edits: SkillEdit[], options: ApplyOpti
 
   for (const edit of edits) {
     if (applied.length >= limit) {
-      skipped.push({ edit, reason: "Lernrate erreicht" });
+      skipped.push({ edit, reason: t("files.learningRateReached") });
       continue;
     }
-    const outcome = applyOne(next, edit, maxAdded - added, maxEditChars, options.protectSlowRegion !== false);
+    const outcome = applyOne(next, edit, maxAdded - added, maxEditChars, options.protectSlowRegion !== false, t);
     if (outcome.ok) {
       next = outcome.skill;
       added += outcome.added;
@@ -65,25 +68,26 @@ function applyOne(
   room: number,
   maxEditChars: number,
   protectSlowRegion: boolean,
+  t: Translate,
 ): { ok: true; skill: string; added: number } | { ok: false; reason: string } {
   if (edit.op !== "delete" && !edit.content.trim()) {
-    return { ok: false, reason: "leerer Inhalt" };
+    return { ok: false, reason: t("files.emptyContent") };
   }
   if (edit.content.length > maxEditChars) {
-    return { ok: false, reason: "Edit ist zu lang" };
+    return { ok: false, reason: t("files.editTooLong") };
   }
 
   if (edit.op === "append") {
     const chunk = edit.content.replace(/^\n*/, "\n");
-    if (chunk.trim().length > room) return { ok: false, reason: "Zeichenbudget erreicht" };
+    if (chunk.trim().length > room) return { ok: false, reason: t("files.charBudgetReached") };
     return { ok: true, skill: insertBeforeSlow(skill, chunk, protectSlowRegion), added: chunk.trim().length };
   }
 
-  if (!edit.target) return { ok: false, reason: "Zieltext fehlt" };
+  if (!edit.target) return { ok: false, reason: t("files.targetMissing") };
   const span = protectSlowRegion ? slowSpan(skill) : null;
   const hits = countOutsideSlow(skill, edit.target, span);
-  if (hits === 0) return { ok: false, reason: "Zieltext nicht gefunden" };
-  if (hits > 1) return { ok: false, reason: "Zieltext ist nicht eindeutig" };
+  if (hits === 0) return { ok: false, reason: t("files.targetNotFound") };
+  if (hits > 1) return { ok: false, reason: t("files.targetAmbiguous") };
 
   if (edit.op === "delete") {
     return { ok: true, skill: replaceOutsideSlow(skill, edit.target, "", span), added: 0 };
@@ -91,13 +95,13 @@ function applyOne(
 
   if (edit.op === "replace") {
     const added = Math.max(0, edit.content.length - edit.target.length);
-    if (added > room) return { ok: false, reason: "Zeichenbudget erreicht" };
+    if (added > room) return { ok: false, reason: t("files.charBudgetReached") };
     return { ok: true, skill: replaceOutsideSlow(skill, edit.target, edit.content, span), added };
   }
 
   if (edit.op === "insert_after") {
     const chunk = edit.content.startsWith("\n") ? edit.content : `\n${edit.content}`;
-    if (chunk.trim().length > room) return { ok: false, reason: "Zeichenbudget erreicht" };
+    if (chunk.trim().length > room) return { ok: false, reason: t("files.charBudgetReached") };
     return {
       ok: true,
       skill: replaceOutsideSlow(skill, edit.target, `${edit.target}${chunk}`, span),
@@ -105,7 +109,7 @@ function applyOne(
     };
   }
 
-  return { ok: false, reason: "unbekannte Operation" };
+  return { ok: false, reason: t("files.unknownOperation") };
 }
 
 function slowSpan(skill: string): { start: number; end: number } | null {

@@ -32,6 +32,15 @@ describe("skill drafting", () => {
     expect(propose.mock.calls).toHaveLength(1);
   });
 
+  it("localizes draft notices without translating the generated skill", async () => {
+    const logs: string[] = [];
+    const draft = await prepareSkillDraft(normalizeRequest(request), { root: "memory", document: "", files: [], name: "parser-helper" },
+      new AbortController().signal, async () => proposal, (event) => { if (event.type === "log") logs.push(event.message); }, "it");
+    expect(logs.at(-1)).toBe("Nuova skill: bozza preparata con 2 file. La qualità non è ancora stata misurata dalla validazione.");
+    expect(draft.skill).toBe(document);
+    expect(draft.reasoning).toBe(proposal.reasoning);
+  });
+
   it("rewrites the existing document and deletes obsolete references before its new baseline", async () => {
     const original = { root: "/tmp/existing", name: "old", document: "---\nname: old\ndescription: An old procedure.\n---\nOld.\n", files: [{ path: "obsolete.md", text: "outdated" }] };
     const config = normalizeRequest({ ...request, workflow: "pretrain", budget: { ...DEFAULT_BUDGET, unlimited: true } });

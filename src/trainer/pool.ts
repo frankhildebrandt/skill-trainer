@@ -1,3 +1,4 @@
+import { LocalizedError } from "../shared/localized-error";
 export async function mapPool<T, R>(
   items: T[],
   limit: number,
@@ -33,7 +34,7 @@ export function isAbortError(err: unknown): boolean {
 
 export function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) {
-    const error = new Error("Abgebrochen");
+    const error = new LocalizedError("diagnostics.cancelled");
     error.name = "AbortError";
     throw error;
   }

@@ -1,14 +1,18 @@
+import { translate, type Translate, type Locale, type TranslationKey } from "../shared/i18n";
+import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { Agent, CursorAgentError, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AgentTrace, ExecuteRequest } from "./attempt";
 import type { ActivityUpdate } from "../shared/run-log";
+import type { SkillFile } from "../shared/types";
 import { createActivitySink, describeSdkEvent, type ActivityEvent } from "./activity";
 import { extractJson, parseProposal, type Proposal } from "./json";
 import type { ProposeCall } from "./loop";
 import { buildOptimizerPrompt } from "./prompts";
 import { isAbortError } from "./pool";
+import { buildSkillFieldsPrompt, hasSkillFields, readSkillFields, type SkillFields } from "./skill-fields";
 
 export function isStartupError(err: unknown): boolean {
   return err instanceof CursorAgentError;
@@ -72,11 +76,32 @@ export async function executeAgent(input: ExecuteRequest): Promise<AgentTrace> {
 }
 
 export async function proposeWithCursor(
-  input: ProposeCall & { model: string; cwd: string; onActivity?: (update: ActivityUpdate) => void },
+  input: ProposeCall & { model: string; cwd: string; onActivity?: (update: ActivityUpdate) => void; translate?: Translate },
 ): Promise<Proposal> {
+  const t: Translate = input.translate ?? ((key, values) => translate("de", key, values));
   const prompt = buildOptimizerPrompt(input);
-  const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity);
+  const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity, t);
   return parseProposal(extractJson(text));
+}
+
+/** Reads the selected skill with the chosen model and returns localized form fields. */
+export async function deriveSkillFields(input: {
+  model: string;
+  skill: string;
+  files: SkillFile[];
+  signal: AbortSignal;
+  locale?: Locale;
+  translate?: Translate;
+}): Promise<SkillFields> {
+  const t: Translate = input.translate ?? ((key, values) => translate(input.locale ?? "de", key, values));
+  const prompt = buildSkillFieldsPrompt({ skill: input.skill, files: input.files, locale: input.locale });
+  const text = await completeText(input.model, os.tmpdir(), prompt, input.signal, undefined, t, {
+    accept: hasSkillFields,
+    problem: (reply) => skillFieldsProblem(reply, t),
+    abortKey: "runner.analysisCancelled",
+    failureKey: "runner.analysisFailed",
+  });
+  return readSkillFields(text);
 }
 
 export async function makeOptimizerDir(sessionDir: string): Promise<string> {
@@ -85,12 +110,21 @@ export async function makeOptimizerDir(sessionDir: string): Promise<string> {
   return fs.mkdtemp(path.join(root, "call-"));
 }
 
+interface CompleteOptions {
+  accept?: (text: string) => boolean;
+  problem?: (text: string) => string;
+  abortKey?: TranslationKey;
+  failureKey?: TranslationKey;
+}
+
 async function completeText(
   model: string,
   cwd: string,
   prompt: string,
   signal: AbortSignal,
-  onActivity?: (update: ActivityUpdate) => void,
+  onActivity: ((update: ActivityUpdate) => void) | undefined,
+  t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-trainer-opt-"));
   await fs.mkdir(dir, { recursive: true });
@@ -98,11 +132,11 @@ async function completeText(
     let last: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity);
+        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity, t, options);
       } catch (err) {
         last = err;
         if (attempt === 1 || signal.aborted || isAbortError(err) || !isStall(err)) throw err;
-        onActivity?.({ op: "note", text: "Verbindung stockt, neuer Versuch." });
+        onActivity?.({ op: "note", text: t("runner.retryConnection") });
       }
     }
     throw last;
@@ -117,22 +151,28 @@ async function completeTextOnce(
   storeCwd: string,
   prompt: string,
   signal: AbortSignal,
-  onActivity?: (update: ActivityUpdate) => void,
+  onActivity: ((update: ActivityUpdate) => void) | undefined,
+  t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
+  const accept = options.accept ?? isProposal;
+  const problem = options.problem ?? ((text: string) => proposalProblem(text, t));
   const agent = await Agent.create({
     model: { id: model },
     tools: [],
     local: { cwd: dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
   });
   try {
-    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity);
-    if (isProposal(first)) return first;
-    onActivity?.({ op: "note", text: `Zweiter Versuch im selben Lauf. ${proposalProblem(first)}` });
+    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity, t, options);
+    if (accept(first)) return first;
+    onActivity?.({ op: "note", text: t("runner.retryProposal", { reason: problem(first) }) });
     return await sendOnce(
       agent,
       "Your previous reply was not one JSON object. Reply with that JSON object only. Do not restate the analysis.",
       signal,
       onActivity,
+      t,
+      options,
     );
   } finally {
     await agent[Symbol.asyncDispose]();
@@ -143,8 +183,11 @@ async function sendOnce(
   agent: { send: (message: string) => Promise<{ stream: () => AsyncIterable<SDKMessage>; supports: (feature: "cancel") => boolean; cancel: () => Promise<void> | void; wait: () => Promise<{ status: string; result?: string; error?: { message?: string } }> }> },
   prompt: string,
   signal: AbortSignal,
-  onActivity?: (update: ActivityUpdate) => void,
+  onActivity: ((update: ActivityUpdate) => void) | undefined,
+  t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
+  const accept = options.accept ?? isProposal;
   const run = await agent.send(prompt);
   const cancel = () => {
     if (run.supports("cancel")) void run.cancel();
@@ -157,9 +200,9 @@ async function sendOnce(
     onActivity?.(update);
     if (proposal || update.op !== "append" || update.kind !== "text") return;
     assistant += update.text;
-    if (!isProposal(assistant)) return;
+    if (!accept(assistant)) return;
     proposal = assistant;
-    onActivity?.({ op: "note", text: "Der Vorschlag ist vollständig. Dieser Durchlauf endet hier, damit keine weitere Überlegung im selben Lauf startet." });
+    onActivity?.({ op: "note", text: t("runner.proposalComplete") });
     if (!signal.aborted) cancel();
   };
   try {
@@ -168,28 +211,37 @@ async function sendOnce(
     if (proposal) {
       // The turn was stopped because the proposal was already complete.
     } else if (isAbortError(err) || signal.aborted || isStall(err)) throw err;
-    else onActivity?.({ op: "note", text: err instanceof Error ? err.message : String(err) });
+    else onActivity?.({ op: "note", text: localizedMessage(err, t) });
   }
   const result = await run.wait();
   signal.removeEventListener("abort", cancel);
   if (proposal) return proposal;
   if (result.status === "cancelled") {
-    const error = new Error("Optimierer abgebrochen");
+    const error = new LocalizedError(options.abortKey ?? "runner.cancelled");
     error.name = "AbortError";
     throw error;
   }
   if (result.status === "error") {
-    throw new Error(result.error?.message ?? "Optimierer-Lauf ist fehlgeschlagen.");
+    throw result.error?.message ? new Error(result.error.message) : new LocalizedError(options.failureKey ?? "runner.failed");
   }
   return result.result ?? "";
 }
 
-function proposalProblem(text: string): string {
+function skillFieldsProblem(text: string, t: Translate): string {
+  try {
+    readSkillFields(text);
+    return t("runner.noFields");
+  } catch (err) {
+    return err instanceof Error ? localizedMessage(err, t) : t("runner.invalidFields");
+  }
+}
+
+function proposalProblem(text: string, t: Translate): string {
   try {
     parseProposal(extractJson(text));
-    return "Die erste Antwort enthielt keinen verwertbaren Vorschlag.";
+    return t("runner.noUsableProposal");
   } catch (err) {
-    return err instanceof Error ? err.message : "Die erste Antwort war kein Vorschlag.";
+    return err instanceof Error ? localizedMessage(err, t) : t("runner.notProposal");
   }
 }
 

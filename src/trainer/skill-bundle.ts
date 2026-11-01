@@ -1,3 +1,5 @@
+import { translate as translateMessage, type Translate } from "../shared/i18n";
+import { LocalizedError } from "../shared/localized-error";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { FileEdit, SkillFile, SkippedEdit } from "../shared/types";
@@ -16,7 +18,7 @@ export interface SkillBundle {
 export async function resolveSkillRoot(picked: string): Promise<string> {
   const resolved = path.resolve(picked);
   const stat = await fs.stat(resolved).catch(() => null);
-  if (!stat) throw new Error("Der Skill-Pfad existiert nicht.");
+  if (!stat) throw new LocalizedError("files.skillPathMissing");
   if (stat.isDirectory()) {
     await assertSkillMarkdown(resolved);
     return resolved;
@@ -29,7 +31,7 @@ export async function resolveSkillRoot(picked: string): Promise<string> {
     if (parent === dir) break;
     dir = parent;
   }
-  throw new Error("Keine SKILL.md gefunden. Wähle den Skill-Ordner oder die SKILL.md darin.");
+  throw new LocalizedError("files.skillNotFound");
 }
 
 export async function loadSkillBundle(picked: string): Promise<SkillBundle> {
@@ -72,10 +74,10 @@ export function sameBundle(leftDoc: string, rightDoc: string, left: SkillFile[] 
 export async function writeSkillTree(destRoot: string, files: SkillFile[]): Promise<void> {
   for (const file of files) {
     const relative = sanitizeRelative(file.path);
-    if (!relative) throw new Error(`Skill-Datei hat einen ungültigen Pfad: ${file.path}`);
+    if (!relative) throw new LocalizedError("files.invalidFilePath", { path: file.path });
     const target = path.resolve(destRoot, relative);
     if (target !== destRoot && !target.startsWith(destRoot + path.sep)) {
-      throw new Error(`Skill-Datei liegt außerhalb des Ordners: ${file.path}`);
+      throw new LocalizedError("files.outsideFolder", { path: file.path });
     }
     await fs.mkdir(path.dirname(target), { recursive: true });
     if (file.base64) await fs.writeFile(target, Buffer.from(file.base64, "base64"));
@@ -94,29 +96,31 @@ export interface FileApplyResult {
 }
 
 export interface FileApplyOptions {
+  translate?: Translate;
   maxFileChars?: number;
   allowSkillDocument?: boolean;
 }
 
 export function applyFileEdits(files: SkillFile[], edits: FileEdit[], limit: number, options: FileApplyOptions = {}): FileApplyResult {
+  const t: Translate = options.translate ?? ((key, values) => translateMessage("de", key, values));
   const next = files.map((file) => ({ ...file }));
   const applied: FileEdit[] = [];
   const skipped: SkippedEdit[] = [];
   for (const edit of edits) {
     if (applied.length >= limit) {
-      skipped.push({ edit: asSkillEdit(edit), reason: "Lernrate erreicht" });
+      skipped.push({ edit: asSkillEdit(edit), reason: t("files.learningRateReached") });
       continue;
     }
     const relative = sanitizeRelative(edit.path);
     if (!relative) {
-      skipped.push({ edit: asSkillEdit(edit), reason: "Pfad ist ungültig" });
+      skipped.push({ edit: asSkillEdit(edit), reason: t("files.invalidPath") });
       continue;
     }
     if (relative === "SKILL.md" && (!options.allowSkillDocument || edit.op === "delete")) {
-      skipped.push({ edit: asSkillEdit(edit), reason: "SKILL.md wird über die Text-Edits geändert" });
+      skipped.push({ edit: asSkillEdit(edit), reason: t("files.skillDocumentViaText") });
       continue;
     }
-    const outcome = applyFile(next, { ...edit, path: relative }, options.maxFileChars ?? MAX_WRITE_CHARS);
+    const outcome = applyFile(next, { ...edit, path: relative }, options.maxFileChars ?? MAX_WRITE_CHARS, t);
     if (outcome.ok) applied.push({ ...edit, path: relative });
     else skipped.push({ edit: asSkillEdit(edit), reason: outcome.reason });
   }
@@ -153,18 +157,18 @@ async function collectFiles(root: string): Promise<SkillFile[]> {
   return files;
 }
 
-function applyFile(files: SkillFile[], edit: FileEdit, maxFileChars: number): { ok: true } | { ok: false; reason: string } {
+function applyFile(files: SkillFile[], edit: FileEdit, maxFileChars: number, t: Translate): { ok: true } | { ok: false; reason: string } {
   if (edit.op === "delete") {
     const index = files.findIndex((file) => file.path === edit.path);
-    if (index === -1) return { ok: false, reason: "Datei nicht gefunden" };
+    if (index === -1) return { ok: false, reason: t("files.fileNotFound") };
     files.splice(index, 1);
     return { ok: true };
   }
-  if (edit.content.length > maxFileChars) return { ok: false, reason: "Datei-Edit ist zu lang" };
+  if (edit.content.length > maxFileChars) return { ok: false, reason: t("files.fileEditTooLong") };
   if (edit.op === "write") {
-    if (edit.path === "SKILL.md" && !edit.content.trim()) return { ok: false, reason: "SKILL.md darf nicht leer sein" };
+    if (edit.path === "SKILL.md" && !edit.content.trim()) return { ok: false, reason: t("files.emptySkillDocument") };
     if (files.some((file) => file.path.startsWith(`${edit.path}/`) || edit.path.startsWith(`${file.path}/`))) {
-      return { ok: false, reason: "Dateipfad kollidiert mit einem Ordner" };
+      return { ok: false, reason: t("files.pathCollision") };
     }
     const existing = files.find((file) => file.path === edit.path);
     const text = edit.content && !edit.content.endsWith("\n") ? `${edit.content}\n` : edit.content;
@@ -176,13 +180,13 @@ function applyFile(files: SkillFile[], edit: FileEdit, maxFileChars: number): { 
     return { ok: true };
   }
   const existing = files.find((file) => file.path === edit.path);
-  if (!existing?.text) return { ok: false, reason: "Datei nicht gefunden" };
-  if (!edit.target) return { ok: false, reason: "Zieltext fehlt" };
+  if (!existing?.text) return { ok: false, reason: t("files.fileNotFound") };
+  if (!edit.target) return { ok: false, reason: t("files.targetMissing") };
   const hits = existing.text.split(edit.target).length - 1;
-  if (hits === 0) return { ok: false, reason: "Zieltext nicht gefunden" };
-  if (hits > 1) return { ok: false, reason: "Zieltext ist nicht eindeutig" };
+  if (hits === 0) return { ok: false, reason: t("files.targetNotFound") };
+  if (hits > 1) return { ok: false, reason: t("files.targetAmbiguous") };
   const text = existing.text.replace(edit.target, () => edit.content);
-  if (edit.path === "SKILL.md" && !text.trim()) return { ok: false, reason: "SKILL.md darf nicht leer sein" };
+  if (edit.path === "SKILL.md" && !text.trim()) return { ok: false, reason: t("files.emptySkillDocument") };
   existing.text = text;
   if (edit.executable !== undefined) existing.executable = edit.executable;
   return { ok: true };
@@ -206,7 +210,7 @@ function asSkillEdit(edit: FileEdit): SkippedEdit["edit"] {
 
 async function assertSkillMarkdown(dir: string): Promise<void> {
   if (!(await exists(path.join(dir, "SKILL.md")))) {
-    throw new Error("Im Ordner liegt keine SKILL.md.");
+    throw new LocalizedError("files.noSkillDocument");
   }
 }
 

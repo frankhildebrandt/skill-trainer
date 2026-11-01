@@ -2,6 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { translate } from "../shared/i18n";
+import { LocalizedError, localizedMessage } from "../shared/localized-error";
+import { applyProposal } from "./candidate";
 import { applyFileEdits, loadSkillBundle, resolveSkillRoot, sameBundle, sanitizeRelative, withDocument, writeSkillTree } from "./skill-bundle";
 
 const roots: string[] = [];
@@ -11,6 +14,63 @@ afterEach(async () => {
 });
 
 describe("skill folder", () => {
+  it("keeps file diagnostic parameters for localization at the UI boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-diagnostic-"));
+    roots.push(root);
+    try {
+      await writeSkillTree(root, [{ path: "../$& original.md", text: "Untouched content" }]);
+      expect.fail("Expected unsafe path rejection");
+    } catch (error) {
+      expect(error).toBeInstanceOf(LocalizedError);
+      expect(error).toMatchObject({ key: "files.invalidFilePath", values: { path: "../$& original.md" } });
+      expect(localizedMessage(error, (key, values) => translate("en", key, values)))
+        .toBe("Skill file has an invalid path: ../$& original.md");
+    }
+  });
+
+  it("propagates a proposal translator to both text and file edit rejections", () => {
+    const result = applyProposal({
+      skill: "# Keep original text\n",
+      files: [],
+      learningRate: 3,
+      translate: (key, values) => translate("es", key, values),
+      proposal: {
+        reasoning: "Generated reasoning stays unchanged.",
+        slow: null,
+        edits: [{ op: "replace", target: "missing", content: "New original text" }],
+        files: [{ op: "write", path: "../unsafe", content: "Original file text" }],
+      },
+    });
+    expect(result.skill).toBe("# Keep original text\n");
+    expect(result.skipped.map((item) => item.reason)).toEqual([
+      "No se ha encontrado el texto de destino",
+      "La ruta no es válida",
+    ]);
+    expect(result.skipped[0]?.edit.content).toBe("New original text");
+    expect(result.skipped[1]?.edit.content).toBe("Original file text");
+  });
+
+  it("exposes an empty skill diagnostic without weakening the document check", () => {
+    expect(() => applyProposal({
+      skill: "# Skill",
+      files: [],
+      learningRate: 1,
+      proposal: { reasoning: "", slow: null, edits: [{ op: "delete", target: "# Skill", content: "" }] },
+    })).toThrow(expect.objectContaining({ key: "files.emptySkill", message: "Der Skill darf keine leere SKILL.md enthalten." }));
+  });
+
+  it("localizes file budget and document protections", () => {
+    const result = applyFileEdits([{ path: "SKILL.md", text: "# Original\n" }], [
+      { op: "delete", path: "SKILL.md", content: "" },
+      { op: "write", path: "new.md", content: "too long" },
+    ], 3, { maxFileChars: 1, translate: (key, values) => translate("it", key, values) });
+    expect(result.skipped.map((item) => item.reason)).toEqual([
+      "SKILL.md viene modificato tramite le modifiche al testo",
+      "La modifica al file è troppo lunga",
+    ]);
+    expect(result.files).toEqual([{ path: "SKILL.md", text: "# Original\n" }]);
+  });
+
   it("loads SKILL.md together with scripts and extra documents", async () => {
     const root = await makeSkill();
     const fromFile = await resolveSkillRoot(path.join(root, "SKILL.md"));

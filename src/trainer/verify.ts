@@ -1,3 +1,4 @@
+import { translate, type Translate } from "../shared/i18n";
 import { spawn } from "node:child_process";
 
 export interface VerifyResult {
@@ -5,10 +6,10 @@ export interface VerifyResult {
   output: string;
 }
 
-export function runVerify(command: string, cwd: string, timeoutMs: number, signal: AbortSignal): Promise<VerifyResult> {
+export function runVerify(command: string, cwd: string, timeoutMs: number, signal: AbortSignal, t: Translate = (key, values) => translate("de", key, values)): Promise<VerifyResult> {
   return new Promise((resolve) => {
     if (signal.aborted) {
-      resolve({ exitCode: null, output: "abgebrochen" });
+      resolve({ exitCode: null, output: t("diagnostics.verifyCancelled") });
       return;
     }
 

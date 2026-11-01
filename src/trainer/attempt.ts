@@ -1,3 +1,5 @@
+import { translate, type Translate } from "../shared/i18n";
+import { LocalizedError } from "../shared/localized-error";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { efficiencySoft, gateScore } from "../shared/score";
@@ -35,6 +37,7 @@ export interface ExecuteRequest {
 }
 
 export interface AttemptRequest {
+  translate?: Translate;
   runId: string;
   phase: Trajectory["phase"];
   ground: Trajectory["ground"];
@@ -56,6 +59,7 @@ export interface AttemptRequest {
 }
 
 export async function performAttempt(input: AttemptRequest): Promise<Trajectory> {
+  const t: Translate = input.translate ?? ((key, values) => translate("de", key, values));
   const snapshot = path.join(input.runDir, "workspace");
   const iso =
     input.ground === "empty" ? await createEmptyRepo(snapshot) : await isolateWorkspace(input.workspacePath, snapshot);
@@ -89,8 +93,8 @@ export async function performAttempt(input: AttemptRequest): Promise<Trajectory>
     if (input.checks?.length) await plantChecks(iso.dir, input.checks);
     const verify =
       trace.status === "cancelled"
-        ? { exitCode: null, output: "Lauf abgebrochen, Prüfbefehl nicht gestartet." }
-        : await runVerify(input.verifyCommand, iso.dir, input.verifyTimeoutMs, input.signal);
+        ? { exitCode: null, output: t("diagnostics.runCancelledCheck") }
+        : await runVerify(input.verifyCommand, iso.dir, input.verifyTimeoutMs, input.signal, t);
     const score = scoreRun(trace, verify.exitCode, verify.output);
     keep = score.hard < 1 && trace.status !== "cancelled";
     return {
@@ -106,7 +110,7 @@ export async function performAttempt(input: AttemptRequest): Promise<Trajectory>
     };
   } catch (err) {
     if (isAbortError(err) || input.signal.aborted) {
-      const error = new Error("Abgebrochen");
+      const error = new LocalizedError("diagnostics.cancelled");
       error.name = "AbortError";
       throw error;
     }
@@ -144,7 +148,7 @@ export async function placeSkill(
 async function assertSkillDestination(workspace: string, destination: string): Promise<void> {
   const relative = path.relative(workspace, destination);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error("Der Skill muss innerhalb der Laufkopie liegen.");
+    throw new LocalizedError("diagnostics.skillOutsideRun");
   }
   let current = workspace;
   for (const part of relative.split(path.sep)) {
@@ -153,7 +157,7 @@ async function assertSkillDestination(workspace: string, destination: string): P
       if (error.code === "ENOENT") return null;
       throw error;
     });
-    if (stat?.isSymbolicLink()) throw new Error("Der Skill-Pfad in der Laufkopie darf keine symbolischen Links enthalten.");
+    if (stat?.isSymbolicLink()) throw new LocalizedError("diagnostics.runSkillSymlink");
   }
 }
 
@@ -203,7 +207,7 @@ function clip(text: string, max: number): string {
 function linkTimeout(parent: AbortSignal, timeoutMs: number): { signal: AbortSignal; clear: () => void } {
   const child = new AbortController();
   const timer = setTimeout(() => {
-    const error = new Error("Zeitlimit");
+    const error = new LocalizedError("diagnostics.timeout");
     error.name = "AbortError";
     child.abort(error);
   }, timeoutMs);

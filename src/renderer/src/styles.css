@@ -358,7 +358,7 @@ label {
 
 :root[data-platform="mac"] .titlebar { -webkit-app-region: drag; }
 
-.titlebar button, .titlebar .pill, .titlebar .status-pill, .titlebar .global-tabs { -webkit-app-region: no-drag; }
+.titlebar button, .titlebar select, .titlebar .pill, .titlebar .status-pill, .titlebar .global-tabs { -webkit-app-region: no-drag; }
 
 .titlebar-end {
   display: flex;
@@ -366,6 +366,30 @@ label {
   gap: 0.7rem;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.locale-save-error {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  position: fixed;
+  top: calc(var(--header-h) + 0.6rem);
+  right: 1rem;
+  z-index: 10;
+  max-width: min(28rem, calc(100% - 2rem));
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius-s);
+  background: var(--bg-raised);
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.language-select {
+  width: auto;
+  max-width: 9.5rem;
+  font-size: 0.8rem;
 }
 
 .picker .titlebar {
