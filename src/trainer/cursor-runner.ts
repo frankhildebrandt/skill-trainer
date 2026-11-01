@@ -80,7 +80,11 @@ export async function proposeWithCursor(
 ): Promise<Proposal> {
   const t: Translate = input.translate ?? ((key, values) => translate("de", key, values));
   const prompt = buildOptimizerPrompt(input);
-  const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity, t);
+  const drafting = input.kind === "create" || input.kind === "pretrain";
+  if (drafting && !input.workspacePath?.trim()) throw new LocalizedError("trainer.chooseProject");
+  const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity, t, {
+    inspectDir: drafting ? input.workspacePath : undefined,
+  });
   return parseProposal(extractJson(text));
 }
 
@@ -110,11 +114,15 @@ export async function makeOptimizerDir(sessionDir: string): Promise<string> {
   return fs.mkdtemp(path.join(root, "call-"));
 }
 
+const READ_TOOLS = ["read", "grep", "glob", "ls", "semSearch"] as const;
+
 interface CompleteOptions {
   accept?: (text: string) => boolean;
   problem?: (text: string) => string;
   abortKey?: TranslationKey;
   failureKey?: TranslationKey;
+  /** Project the agent must read before it answers. Read tools only. */
+  inspectDir?: string;
 }
 
 async function completeText(
@@ -157,23 +165,40 @@ async function completeTextOnce(
 ): Promise<string> {
   const accept = options.accept ?? isProposal;
   const problem = options.problem ?? ((text: string) => proposalProblem(text, t));
+  const inspectDir = options.inspectDir?.trim();
   const agent = await Agent.create({
     model: { id: model },
-    tools: [],
-    local: { cwd: dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
+    tools: inspectDir ? [...READ_TOOLS] : [],
+    local: { cwd: inspectDir || dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
   });
   try {
-    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity, t, options);
-    if (accept(first)) return first;
-    onActivity?.({ op: "note", text: t("runner.retryProposal", { reason: problem(first) }) });
-    return await sendOnce(
+    const closing = inspectDir
+      ? "Read the repository before you answer. Then reply with the JSON object only."
+      : "Reply with the JSON object only.";
+    const first = await sendOnce(agent, `${prompt}\n\n${closing}`, signal, onActivity, t, options);
+    if (inspectDir && !first.sawTool) {
+      onActivity?.({ op: "note", text: t("runner.retryProposal", { reason: t("runner.unreadCodebase") }) });
+      const reread = await sendOnce(
+        agent,
+        "You have not read the repository. Read it with the file tools now. Then reply with the JSON object only.",
+        signal,
+        onActivity,
+        t,
+        options,
+      );
+      if (!reread.sawTool) throw new LocalizedError("runner.unreadCodebase");
+      return reread.text;
+    }
+    if (accept(first.text)) return first.text;
+    onActivity?.({ op: "note", text: t("runner.retryProposal", { reason: problem(first.text) }) });
+    return (await sendOnce(
       agent,
       "Your previous reply was not one JSON object. Reply with that JSON object only. Do not restate the analysis.",
       signal,
       onActivity,
       t,
       options,
-    );
+    )).text;
   } finally {
     await agent[Symbol.asyncDispose]();
   }
@@ -186,7 +211,7 @@ async function sendOnce(
   onActivity: ((update: ActivityUpdate) => void) | undefined,
   t: Translate,
   options: CompleteOptions = {},
-): Promise<string> {
+): Promise<{ text: string; sawTool: boolean }> {
   const accept = options.accept ?? isProposal;
   const run = await agent.send(prompt);
   const cancel = () => {
@@ -196,11 +221,15 @@ async function sendOnce(
   else signal.addEventListener("abort", cancel, { once: true });
   let assistant = "";
   let proposal: string | null = null;
+  let sawTool = false;
   const watch = (update: ActivityUpdate) => {
     onActivity?.(update);
-    if (proposal || update.op !== "append" || update.kind !== "text") return;
-    assistant += update.text;
+    if (update.op === "tool" && update.status !== "running") sawTool = true;
+    if (update.op === "append" && update.kind === "text") assistant += update.text;
+    if (proposal || (update.op !== "append" && update.op !== "tool")) return;
+    if (update.op === "append" && update.kind !== "text") return;
     if (!accept(assistant)) return;
+    if (options.inspectDir && !sawTool) return;
     proposal = assistant;
     onActivity?.({ op: "note", text: t("runner.proposalComplete") });
     if (!signal.aborted) cancel();
@@ -215,7 +244,7 @@ async function sendOnce(
   }
   const result = await run.wait();
   signal.removeEventListener("abort", cancel);
-  if (proposal) return proposal;
+  if (proposal) return { text: proposal, sawTool };
   if (result.status === "cancelled") {
     const error = new LocalizedError(options.abortKey ?? "runner.cancelled");
     error.name = "AbortError";
@@ -224,7 +253,7 @@ async function sendOnce(
   if (result.status === "error") {
     throw result.error?.message ? new Error(result.error.message) : new LocalizedError(options.failureKey ?? "runner.failed");
   }
-  return result.result ?? "";
+  return { text: result.result ?? assistant, sawTool };
 }
 
 function skillFieldsProblem(text: string, t: Translate): string {

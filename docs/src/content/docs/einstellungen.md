@@ -18,7 +18,7 @@ Die Werte auf dieser Seite gelten für eine neue Konfiguration. Die App lädt be
 | **Workflow** | Fine-Tuning | Vorhandenen Skill messen und verbessern, als Vortraining umarbeiten oder mit Create Skill neu erstellen. |
 | **Skill-Name** | leer | Nur Create Skill. Kleinbuchstaben und Ziffern mit einzelnen Bindestrichen, etwa `api-tests`. |
 | **Neuer Skill-Ordner** | leer | Nur Create Skill. Noch nicht existierender Zielordner; wird beim Übernehmen erstellt. |
-| **Projekt** | leer | Grundlage der Trainingskopien. Für Fine-Tuning nötig; Home- und Stammordner werden abgewiesen. |
+| **Projekt** | leer | Codebase, die Create Skill und Vortraining vor dem Entwurf lesen. Bei Fine-Tuning außerdem Grundlage der Trainingskopien. Home- und Stammordner werden abgewiesen. |
 | **Skill** | leer | Vorhandenen Skill über Projekt-Dropdown oder **Wählen** laden. Ordner und `SKILL.md` sind zulässig. Ein einzelner Projekt-Skill wird bei leerer Auswahl automatisch gewählt. |
 | **Skill beschreiben** | leer | Pflicht bei Create Skill. Beschreibe Einsatzfälle, Ablauf und Begleitdateien. |
 | **Ziel des Vortrainings** | leer | Pflicht bei Vortraining. Beschreibe die gewünschten Änderungen am vorhandenen Skill. |
@@ -27,7 +27,7 @@ Die Werte auf dieser Seite gelten für eine neue Konfiguration. Die App lädt be
 
 **Standard: an.** Nur bei Vortraining und Create Skill sichtbar. Nach dem Entwurf folgen Vorprüfung, Baseline und Training. Projekt, Auftrag, Prüfung und Zielmodell sind erforderlich.
 
-**Aus:** Es entsteht ausschließlich ein ungemessener Entwurf. Projektbezogene Trainingsfelder verschwinden; Projekt, Auftrag und Prüfbefehl werden nicht benötigt.
+**Aus:** Es entsteht ausschließlich ein ungemessener Entwurf. Auftrag, Prüfung und Zielmodell werden nicht benötigt. Der Projektordner bleibt erforderlich, weil der Entwurf die Codebase zuerst liest.
 
 ## Auftrag und Prüfung
 

@@ -41,6 +41,8 @@ export interface ProposeCall {
   emptyGate: boolean;
   skillScope: "general" | "specific";
   auftrag: string;
+  /** Project the create and pretrain drafter must read before it designs the skill. */
+  workspacePath?: string;
   signal: AbortSignal;
 }
 

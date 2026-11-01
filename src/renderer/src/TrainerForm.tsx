@@ -89,16 +89,14 @@ export function TrainerForm({
           </label>
         </>
       ) : null}
-      {fineTune ? (
-        <label>
-          {t("form.project")}
-          <div className="row">
-            <input readOnly value={form.workspacePath} placeholder={t("form.projectFolder")} />
-            <button type="button" onClick={onChooseFolder} disabled={locked}>{t("form.choose")}</button>
-          </div>
-          <small>{t("form.isolationHint")}</small>
-        </label>
-      ) : null}
+      <label>
+        {t("form.project")}
+        <div className="row">
+          <input readOnly required value={form.workspacePath} placeholder={t("form.projectFolder")} />
+          <button type="button" onClick={onChooseFolder} disabled={locked}>{t("form.choose")}</button>
+        </div>
+        <small>{[draft ? t("form.readProjectHint") : "", fineTune ? t("form.isolationHint") : ""].filter(Boolean).join(" ")}</small>
+      </label>
       {workflow !== "create" ? (
         <>
           <SkillField
