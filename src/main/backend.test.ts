@@ -10,11 +10,14 @@ const mocks = vi.hoisted(() => ({
   propose: vi.fn(),
   verify: vi.fn(),
   attempt: vi.fn(),
+  openDialog: vi.fn(),
+  saveDialog: vi.fn(),
+  languages: ["de-CH"],
 }));
 vi.mock("electron", () => ({
-  app: { getPath: () => mocks.userData },
+  app: { getPath: () => mocks.userData, getPreferredSystemLanguages: () => mocks.languages },
   ipcMain: { handle: (name: string, fn: (...args: any[]) => Promise<any>) => mocks.handlers.set(name, fn) },
-  dialog: {}, shell: {},
+  dialog: { showOpenDialog: mocks.openDialog, showSaveDialog: mocks.saveDialog }, shell: {},
 }));
 vi.mock("../trainer/cursor-runner", () => ({ proposeWithCursor: mocks.propose, executeAgent: vi.fn(), isStartupError: () => false }));
 vi.mock("../trainer/attempt", () => ({ performAttempt: mocks.attempt }));
@@ -36,8 +39,12 @@ beforeEach(async () => {
   mocks.propose.mockReset();
   mocks.verify.mockReset();
   mocks.attempt.mockReset();
+  mocks.openDialog.mockReset();
+  mocks.saveDialog.mockReset();
+  mocks.languages = ["de-CH"];
   events.length = 0;
   registerBackend();
+  await mocks.handlers.get("locale:load")!();
   attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send: (_name: string, event: SessionEvent) => events.push(event) } } as never);
 });
 
@@ -155,5 +162,53 @@ describe("skill workflow IPC", () => {
     await writeBack("two");
     expect(await fs.readFile(path.join(root, "new-skill", "SKILL.md"), "utf8")).toBe(document);
     expect(await fs.readFile(path.join(otherPath, "SKILL.md"), "utf8")).toBe(document);
+  });
+});
+
+
+describe("language preferences IPC", () => {
+  it("detects a supported system language and uses English as fallback", async () => {
+    mocks.languages = ["pt-BR", "fr-CH"];
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("fr");
+    mocks.languages = ["pt-BR"];
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("en");
+  });
+
+  it("persists the selected language independently and broadcasts it to the window", async () => {
+    const send = vi.fn();
+    attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send } } as never);
+    await mocks.handlers.get("locale:save")!(null, "it");
+    expect(send).toHaveBeenCalledWith("locale:changed", "it");
+    expect(JSON.parse(await fs.readFile(path.join(mocks.userData, "preferences.json"), "utf8"))).toEqual({ locale: "it" });
+    await expect(fs.stat(path.join(mocks.userData, "settings.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("it");
+  });
+
+  it("rejects unsupported languages without changing the preference", async () => {
+    await expect(mocks.handlers.get("locale:save")!(null, "xx")).rejects.toThrow("Nicht unterstützte Sprache");
+    expect(await mocks.handlers.get("locale:load")!()).toBe("de");
+  });
+
+  it("uses system detection when a saved preference is invalid", async () => {
+    await fs.mkdir(mocks.userData, { recursive: true });
+    await fs.writeFile(path.join(mocks.userData, "preferences.json"), JSON.stringify({ locale: "xx" }));
+    mocks.languages = ["nl-BE"];
+    registerBackend();
+    expect(await mocks.handlers.get("locale:load")!()).toBe("nl");
+  });
+
+  it("localizes native file dialogs using the selected language", async () => {
+    mocks.openDialog.mockResolvedValue({ canceled: true, filePaths: [] });
+    mocks.saveDialog.mockResolvedValue({ canceled: true });
+    await mocks.handlers.get("locale:save")!(null, "es");
+    await mocks.handlers.get("dialog:skill")!();
+    expect(mocks.openDialog).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ title: "Elegir una carpeta de skill o SKILL.md" }));
+    await mocks.handlers.get("dialog:folder")!();
+    expect(mocks.openDialog).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ title: "Elegir una carpeta de proyecto" }));
+    await mocks.handlers.get("dialog:skill-destination")!();
+    expect(mocks.saveDialog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: "Definir la nueva carpeta del skill", buttonLabel: "Elegir destino" }));
   });
 });

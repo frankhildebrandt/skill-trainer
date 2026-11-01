@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { useI18n } from "./i18n";
 
 export function NumberField({
   label,
@@ -13,6 +14,7 @@ export function NumberField({
   disabled?: boolean;
   onChange: (value: number) => void;
 }) {
+  const { t } = useI18n();
   const id = useId();
   return (
     <div className="num">
@@ -20,7 +22,7 @@ export function NumberField({
       <div className="stepper">
         <button
           type="button"
-          aria-label={`${label} verringern`}
+          aria-label={t("form.decrease", { label })}
           disabled={disabled || value <= min}
           onClick={() => onChange(Math.max(min, value - 1))}
         >
@@ -40,7 +42,7 @@ export function NumberField({
         />
         <button
           type="button"
-          aria-label={`${label} erhöhen`}
+          aria-label={t("form.increase", { label })}
           disabled={disabled}
           onClick={() => onChange(value + 1)}
         >

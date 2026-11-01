@@ -358,7 +358,7 @@ label {
 
 :root[data-platform="mac"] .titlebar { -webkit-app-region: drag; }
 
-.titlebar button, .titlebar .pill, .titlebar .status-pill, .titlebar .global-tabs { -webkit-app-region: no-drag; }
+.titlebar button, .titlebar select, .titlebar .pill, .titlebar .status-pill, .titlebar .global-tabs { -webkit-app-region: no-drag; }
 
 .titlebar-end {
   display: flex;
@@ -366,6 +366,12 @@ label {
   gap: 0.7rem;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.language-select {
+  width: auto;
+  max-width: 9.5rem;
+  font-size: 0.8rem;
 }
 
 .picker .titlebar {

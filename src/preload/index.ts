@@ -1,7 +1,15 @@
+import type { Locale } from "../shared/i18n/types";
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { SessionEvent, TrainerApi, TrainRequest } from "../shared/types";
 
 const api: TrainerApi = {
+  loadLocale: () => ipcRenderer.invoke("locale:load"),
+  saveLocale: (locale) => ipcRenderer.invoke("locale:save", locale),
+  onLocaleChange: (cb) => {
+    const listener = (_event: IpcRendererEvent, locale: Locale) => cb(locale);
+    ipcRenderer.on("locale:changed", listener);
+    return () => ipcRenderer.removeListener("locale:changed", listener);
+  },
   authStatus: () => ipcRenderer.invoke("auth:status"),
   authLogin: () => ipcRenderer.invoke("auth:login"),
   listModels: () => ipcRenderer.invoke("models:list"),

@@ -81,3 +81,51 @@ describe("repo catalog", () => {
     expect(catalog.warnings.some((warning) => warning.includes("Git-Remote"))).toBe(true);
   });
 });
+
+describe("localized catalog warnings", () => {
+  it("uses the requested language for missing-remote warnings and preserves SDK error text", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-catalog-locale-"));
+    roots.push(root);
+    const checkout = path.join(root, "widgets");
+    await fs.mkdir(checkout);
+    const deps: RepoRunDeps = {
+      projectsRoot: path.join(root, "missing"),
+      checkouts: async () => ({ paths: [checkout], remotes: [] }),
+      localAgents: async () => { throw new Error("SDK diagnostic stays unchanged"); },
+      localMessages: async () => [],
+      cloudAgents: async () => { throw new Error("Cloud should not be called"); },
+      cloudRuns: async () => [],
+    };
+    const expected = {
+      de: "Ohne Git-Remote lassen sich Cloud-Agents diesem Repo nicht zuordnen.",
+      en: "A Git remote is required to match cloud agents to this repository.",
+      fr: "Un dépôt Git distant est nécessaire pour associer les agents cloud à ce dépôt.",
+      it: "È necessario un remote Git per associare gli agenti cloud a questo repository.",
+      es: "Se necesita un remoto Git para asociar los agentes en la nube a este repositorio.",
+      nl: "Een Git-remote is nodig om cloudagents aan deze repository te koppelen.",
+    } as const;
+    for (const locale of Object.keys(expected) as Array<keyof typeof expected>) {
+      const catalog = await listRepoRuns(checkout, deps, "all", locale);
+      expect(catalog.warnings).toContain(expected[locale]);
+      expect(catalog.warnings[0]).toContain("widgets");
+      expect(catalog.warnings[0]).toContain("SDK diagnostic stays unchanged");
+      expect(catalog.warnings).toHaveLength(2);
+    }
+  });
+
+  it("localizes per-agent cloud warnings", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "repo-catalog-locale-"));
+    roots.push(root);
+    const catalog = await listRepoRuns(root, {
+      projectsRoot: path.join(root, "missing"),
+      checkouts: async () => ({ paths: [root], remotes: ["https://github.com/acme/widgets"] }),
+      localAgents: async () => [],
+      localMessages: async () => [],
+      cloudAgents: async () => [{
+        agentId: "agent-1", name: "My agent", summary: "", repos: ["https://github.com/acme/widgets"], lastModified: 1,
+      }],
+      cloudRuns: async () => { throw new Error("SDK diagnostic"); },
+    }, "cloud", "fr");
+    expect(catalog.warnings).toEqual(["Agent cloud My agent : SDK diagnostic"]);
+  });
+});

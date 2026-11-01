@@ -62,3 +62,39 @@ describe("workflow report", () => {
     }))).toBe(true);
   });
 });
+
+describe("localized workflow report", () => {
+  it("translates the unmeasured draft report in every supported language", () => {
+    const expected = {
+      de: "Entwurf vorbereitet · ungemessen",
+      en: "Draft prepared · unmeasured",
+      fr: "Brouillon préparé · non évalué",
+      it: "Bozza preparata · non valutata",
+      es: "Borrador preparado · sin evaluar",
+      nl: "Concept voorbereid · niet gemeten",
+    } as const;
+    for (const locale of Object.keys(expected) as Array<keyof typeof expected>) {
+      const draft = summary();
+      expect(resultTitle(draft, locale)).toBe(expected[locale]);
+      expect(reportBody(draft, locale)).toContain(expected[locale]);
+      expect(reportBody(draft, locale)).toContain("Added a helper.");
+      expect(reportBody(draft, locale)).not.toContain("0/0");
+    }
+  });
+
+  it("formats measured scores for the selected locale while retaining generated content", () => {
+    const draft = summary({
+      baseline: { gate: 0.85, hard: 1, soft: 0, runs: 2, passes: 2 },
+      best: { gate: 0.955, hard: 1, soft: 0.7, runs: 2, passes: 2 },
+      error: "User-supplied diagnostic",
+    });
+    const english = reportBody(draft, "en");
+    const french = reportBody(draft, "fr");
+    expect(english).toContain("**95.5**");
+    expect(english).toContain("2/2 passed");
+    expect(french).toContain("**95,5**");
+    expect(french).toContain("2/2 réussies");
+    expect(english).toContain("User-supplied diagnostic");
+    expect(french).toContain("User-supplied diagnostic");
+  });
+});

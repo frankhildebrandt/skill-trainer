@@ -5,6 +5,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AuthStatus, ModelOption, SessionEvent, SessionSummary, SkillDraft, TrainRequest, TrainerEvent, Trajectory } from "../shared/types";
 import { aggregate } from "../shared/score";
+import { isLocale, resolveLocale, translate, type Locale, type TranslationKey } from "../shared/i18n";
+import { readSavedLocale, writeSavedLocale } from "./locale-store";
 import { performAttempt } from "../trainer/attempt";
 import { CHECK_COMMAND, harvestChecks, plantChecks, writeChecks, type CheckFile } from "../trainer/checks";
 import { normalizeRequest } from "../trainer/config";
@@ -21,6 +23,7 @@ import { saveSkillOutput } from "../trainer/skill-output";
 import { listProjectSkills } from "../trainer/project-skills";
 import { listRepoRuns } from "../trainer/repo-runs";
 
+let currentLocale: Locale = "en";
 let windowRef: BrowserWindow | null = null;
 let pickerWin: BrowserWindow | null = null;
 let pickerWorkspace = "";
@@ -46,6 +49,24 @@ export function attachWindow(win: BrowserWindow): void {
 
 export function registerBackend(): void {
   sessions.clear();
+  currentLocale = resolveLocale(app.getPreferredSystemLanguages());
+  const localeReady = readSavedLocale().then((locale) => { currentLocale = locale; });
+  let localeWrite = Promise.resolve();
+  ipcMain.handle("locale:load", async () => {
+    await localeReady;
+    return currentLocale;
+  });
+  ipcMain.handle("locale:save", async (_event, locale: unknown) => {
+    await localeReady;
+    if (!isLocale(locale)) throw new Error(t("backend.invalidLocale"));
+    currentLocale = locale;
+    if (pickerWin && !pickerWin.isDestroyed()) pickerWin.setTitle(t("backend.cursorRuns"));
+    for (const win of new Set([windowRef, pickerWin])) {
+      if (win && !win.isDestroyed()) win.webContents.send("locale:changed", locale);
+    }
+    localeWrite = localeWrite.catch(() => undefined).then(() => writeSavedLocale(locale));
+    await localeWrite;
+  });
   ipcMain.handle("auth:status", () => readAuth());
   ipcMain.handle("auth:login", async () => {
     await Cursor.auth.login({
@@ -58,15 +79,17 @@ export function registerBackend(): void {
   });
   ipcMain.handle("models:list", () => listModels());
   ipcMain.handle("dialog:skill", async () => {
+    await localeReady;
     const result = await dialog.showOpenDialog(dialogParent(), {
-      title: "Skill-Ordner oder SKILL.md wählen",
+      title: t("backend.chooseSkill"),
       properties: ["openFile", "openDirectory"],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle("dialog:folder", async () => {
+    await localeReady;
     const result = await dialog.showOpenDialog(dialogParent(), {
-      title: "Projektordner wählen",
+      title: t("backend.chooseProject"),
       properties: ["openDirectory"],
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
@@ -74,13 +97,14 @@ export function registerBackend(): void {
   ipcMain.handle("skills:list", async (_event, workspacePath: string) => {
     const resolved = path.resolve(String(workspacePath ?? ""));
     const stat = await fs.stat(resolved).catch(() => null);
-    if (!stat?.isDirectory()) throw new Error("Zuerst einen Projektordner wählen.");
+    if (!stat?.isDirectory()) throw new Error(t("backend.chooseProjectFirst"));
     return listProjectSkills(resolved);
   });
   ipcMain.handle("dialog:skill-destination", async () => {
+    await localeReady;
     const result = await dialog.showSaveDialog(dialogParent(), {
-      title: "Neuen Skill-Ordner festlegen",
-      buttonLabel: "Ziel wählen",
+      title: t("backend.skillDestination"),
+      buttonLabel: t("backend.chooseDestination"),
       defaultPath: "new-skill",
       properties: ["createDirectory"],
     });
@@ -102,9 +126,10 @@ export function registerBackend(): void {
     };
   });
   ipcMain.handle("trainer:start", async (_event, request: TrainRequest, sessionId: unknown) => {
+    await localeReady;
     const id = parseSessionId(sessionId);
     const current = sessions.get(id);
-    if (current?.running || current?.writing) throw new Error("Dieses Training läuft schon.");
+    if (current?.running || current?.writing) throw new Error(t("backend.alreadyRunning"));
     const controller = new AbortController();
     const record: SessionRecord = { running: true, controller, summary: null, skillRoot: null, writing: false };
     sessions.set(id, record);
@@ -121,8 +146,8 @@ export function registerBackend(): void {
   });
   ipcMain.handle("trainer:writeBack", async (_event, sessionId: unknown) => {
     const record = sessions.get(parseSessionId(sessionId));
-    if (!record) throw new Error("Noch kein abgeschlossener Lauf.");
-    if (record.running || record.writing) throw new Error("Es läuft schon ein Training oder Speichervorgang.");
+    if (!record) throw new Error(t("backend.noFinishedRun"));
+    if (record.running || record.writing) throw new Error(t("backend.busy"));
     record.writing = true;
     try {
       return await writeBack(record);
@@ -137,7 +162,7 @@ export function registerBackend(): void {
   ipcMain.handle("runs:pick", async (_event, workspacePath: string) => {
     const resolved = path.resolve(String(workspacePath ?? ""));
     const stat = await fs.stat(resolved).catch(() => null);
-    if (!stat?.isDirectory()) throw new Error("Zuerst einen Projektordner wählen.");
+    if (!stat?.isDirectory()) throw new Error(t("backend.chooseProjectFirst"));
     if (pickerWin && !pickerWin.isDestroyed() && pendingPick) {
       pickerWin.focus();
       return pendingPick;
@@ -157,10 +182,11 @@ export function registerBackend(): void {
     });
     return pendingPick;
   });
-  ipcMain.handle("runs:catalog", (_event, scope: unknown) => {
-    if (!pickerWorkspace) throw new Error("Kein Projektordner.");
+  ipcMain.handle("runs:catalog", async (_event, scope: unknown) => {
+    await localeReady;
+    if (!pickerWorkspace) throw new Error(t("backend.noProject"));
     const which = scope === "local" || scope === "cloud" ? scope : "all";
-    return listRepoRuns(pickerWorkspace, undefined, which);
+    return listRepoRuns(pickerWorkspace, undefined, which, currentLocale);
   });
   ipcMain.handle("runs:choose", (event, prompt: unknown) => {
     const text = typeof prompt === "string" ? prompt.trim() : "";
@@ -182,11 +208,11 @@ async function runSession(
   sessionId: string,
   record: SessionRecord,
 ): Promise<SessionSummary> {
-  const config = normalizeRequest(request);
+  const config = normalizeRequest(request, currentLocale);
   if (config.trainAfterDraft) {
     assertSafeWorkspace(config.workspacePath);
     const workspaceStat = await fs.stat(config.workspacePath);
-    if (!workspaceStat.isDirectory()) throw new Error("Der Projektpfad ist kein Ordner.");
+    if (!workspaceStat.isDirectory()) throw new Error(t("backend.projectNotFolder"));
   }
   const bundle = config.workflow === "create" ? await newSkillBundle(config) : await loadSkillBundle(config.skillPath);
   record.summary = null;
@@ -212,7 +238,7 @@ async function runSession(
   };
   try {
     if (config.workflow !== "train") {
-      draft = await prepareSkillDraft(config, bundle, controller.signal, propose, emit);
+      draft = await prepareSkillDraft(config, bundle, controller.signal, propose, emit, currentLocale);
       summary = { ...summary, draft, bestSkill: draft.skill, bestFiles: draft.files };
       await fs.writeFile(path.join(sessionDir, "draft.md"), draft.skill);
       await writeSkillTree(path.join(sessionDir, "draft-skill"), draft.files);
@@ -221,15 +247,15 @@ async function runSession(
       const grading: Grading = { verifyCommand: config.verifyCommand, checks: [] };
       if (config.verifyMode === "agent") {
         emit({ type: "phase", phase: "checks" });
-        emit({ type: "log", message: "Der Agent schreibt das Testskript, bevor ein Trainingslauf startet." });
+        emit({ type: "log", message: t("backend.authoringChecks") });
         const authored = await authorChecks(config, sessionDir, controller, emit);
         grading.verifyCommand = authored.command;
         grading.checks = authored.files;
       }
       emit({ type: "phase", phase: "preflight" });
       emit({ type: "log", message: config.gateOnEmptyRepo
-        ? "Vorprüfung: auf einem leeren Repository muss der Prüfbefehl noch fehlschlagen. Training läuft im Projekt, das Gate auf einem neuen leeren Repository."
-        : "Vorprüfung: der Prüfbefehl muss auf einer frischen Kopie noch fehlschlagen." });
+        ? t("backend.preflightEmpty")
+        : t("backend.preflight") });
       const prepared = draft ? { ...bundle, document: draft.skill, files: draft.files } : bundle;
       const result = await runPrepared(config, prepared, grading, sessionDir, controller, (event) => {
         if (event.type !== "done") emit(event);
@@ -240,7 +266,7 @@ async function runSession(
   } catch (err) {
     if (isAbortError(err) || controller.signal.aborted) {
       summary.cancelled = true;
-      emit({ type: "log", message: "Abgebrochen. Ein vorbereiteter Entwurf bleibt erhalten." });
+      emit({ type: "log", message: t("backend.cancelledDraft") });
     } else {
       summary.error = explain(err).message;
       emit({ type: "error", message: summary.error });
@@ -264,7 +290,7 @@ async function newSkillBundle(config: ReturnType<typeof normalizeRequest>): Prom
     }
     throw error;
   }
-  throw new Error("Der Zielordner existiert schon. Wähle für Create-Skill einen neuen Ordner.");
+  throw new Error(t("backend.destinationExists"));
 }
 
 function sessionProposer(
@@ -275,15 +301,15 @@ function sessionProposer(
   let counter = 0;
   return async (input) => {
     const runId = `optimizer-${++counter}`;
-    const title = input.kind === "create" ? "Skill erstellen" : input.kind === "pretrain" ? "Vortraining" : input.kind === "slow" ? "Optimierer Slow" : `Optimierer ${counter}`;
-    emit({ type: "log", message: `${title}: Skill-Ordner mit ${config.budget.unlimited ? "unbegrenztem" : "konfiguriertem"} Edit-Budget überarbeiten.` });
-    emit({ type: "run_activity", runId, title });
+    const title = input.kind === "create" ? t("backend.createSkill") : input.kind === "pretrain" ? t("backend.pretraining") : input.kind === "slow" ? t("backend.slowOptimizer") : t("backend.optimizer", { count: counter });
+    emit({ type: "log", message: t(config.budget.unlimited ? "backend.optimizeUnlimited" : "backend.optimizeConfigured", { title }) });
+    emit({ type: "run_activity", runId, title, label: { key: input.kind === "create" ? "backend.createSkill" : input.kind === "pretrain" ? "backend.pretraining" : input.kind === "slow" ? "backend.slowOptimizer" : "backend.optimizer", values: { count: counter } } });
     const cwd = path.join(sessionDir, "optimizer", runId);
     await fs.mkdir(cwd, { recursive: true });
     try {
       const proposal = await proposeWithCursor({ ...input, model: config.optimizerModel, cwd,
         onActivity: (update) => emit({ type: "run_activity", runId, update }) });
-      emit({ type: "run_activity", runId, update: { op: "note", text: "Vorschlag ist da." }, settled: true });
+      emit({ type: "run_activity", runId, update: { op: "note", text: t("backend.proposalReady") }, settled: true });
       return proposal;
     } catch (err) {
       emit({ type: "run_activity", runId, update: { op: "note", text: explain(err).message }, settled: true });
@@ -307,7 +333,7 @@ async function authorChecks(
   const iso = await isolateWorkspace(config.workspacePath, dest);
   let keep = false;
   try {
-    emit({ type: "run_activity", runId: "testskript", title: "Testskript" });
+    emit({ type: "run_activity", runId: "testskript", title: t("backend.testScript"), label: { key: "backend.testScript" } });
     const trace = await executeAgent({
       cwd: iso.dir,
       model: config.targetModel,
@@ -318,7 +344,7 @@ async function authorChecks(
       onActivity: (update) => emit({ type: "run_activity", runId: "testskript", update }),
     });
     if (controller.signal.aborted || trace.status === "cancelled") {
-      const error = new Error("Abgebrochen");
+      const error = new Error(t("backend.cancelled"));
       error.name = "AbortError";
       throw error;
     }
@@ -326,13 +352,13 @@ async function authorChecks(
     await writeChecks(path.join(sessionDir, "checks"), files);
     emit({
       type: "log",
-      message: `Testskript geschrieben (${files.length} ${files.length === 1 ? "Datei" : "Dateien"}). Bewertung: ${CHECK_COMMAND}`,
+      message: t(files.length === 1 ? "backend.checksWrittenOne" : "backend.checksWritten", { count: files.length, command: CHECK_COMMAND }),
     });
     return { command: CHECK_COMMAND, files };
   } catch (err) {
     keep = true;
     if (!isAbortError(err)) {
-      emit({ type: "log", message: `Die Testskript-Kopie bleibt liegen: ${iso.dir}` });
+      emit({ type: "log", message: t("backend.checksKept", { path: iso.dir }) });
     }
     throw err;
   } finally {
@@ -359,22 +385,22 @@ async function runPrepared(
     if (grading.checks.length > 0) await plantChecks(preflight.dir, grading.checks);
     const result = await runVerify(grading.verifyCommand, preflight.dir, config.verifyTimeoutMs, controller.signal);
     if (controller.signal.aborted) {
-      const error = new Error("Abgebrochen");
+      const error = new Error(t("backend.cancelled"));
       error.name = "AbortError";
       throw error;
     }
     if (result.exitCode === 0) {
       throw new Error(
         config.gateOnEmptyRepo
-          ? "Der Prüfbefehl ist auf einem leeren Repository schon erfolgreich. Dann sieht das Gate keinen Unterschied zwischen einem Skill, der das Modul erzeugt, und einem leeren Ordner."
-          : "Der Prüfbefehl ist auf einer frischen Kopie schon erfolgreich. Dann unterscheidet das Gate einen besseren Skill nicht vom Nichtstun. Der Befehl soll erst fehlschlagen und nach dem Auftrag gelingen.",
+          ? t("backend.alreadyPassesEmpty")
+          : t("backend.alreadyPasses"),
       );
     }
     emit({
       type: "log",
       message: config.gateOnEmptyRepo
-        ? `Leeres Repository ist rot (Exit ${result.exitCode ?? "keins"}). Training in einer Kopie des Projekts, Gate auf einem neuen leeren Repository.`
-        : `Vorprüfung fehlgeschlagen (Exit ${result.exitCode ?? "keins"}). Das ist die richtige Ausgangslage.`,
+        ? t("backend.emptyReady", { code: result.exitCode ?? t("backend.noExitCode") })
+        : t("backend.preflightReady", { code: result.exitCode ?? t("backend.noExitCode") }),
     });
   } finally {
     await preflight.cleanup();
@@ -405,6 +431,7 @@ async function runPrepared(
     {
       emit,
       propose,
+      translate: t,
       runAttempt: (input) => runOne(input, config, grading, sessionDir, () => `${input.phase}-${++counter}`, emit),
     },
   );
@@ -448,7 +475,7 @@ async function runOne(
       runId,
       update: {
         op: "note",
-        text: `Prüfung: Exit ${trajectory.score.verifyExitCode ?? "—"} · ${trajectory.score.toolCalls} Werkzeuge · ${trajectory.score.hard >= 1 ? "grün" : "rot"}`,
+        text: t("backend.runResult", { code: trajectory.score.verifyExitCode ?? "—", tools: trajectory.score.toolCalls, result: t(trajectory.score.hard >= 1 ? "backend.pass" : "backend.fail") }),
       },
     });
     emit({ type: "run_finished", run: trajectory });
@@ -483,11 +510,11 @@ async function runOne(
 }
 
 async function writeBack(record: SessionRecord): Promise<{ backupPath: string | null; skillPath: string }> {
-  if (!record.summary || !record.skillRoot) throw new Error("Noch kein abgeschlossener Lauf.");
+  if (!record.summary || !record.skillRoot) throw new Error(t("backend.noFinishedRun"));
   const summary = record.summary;
   const files = summary.bestFiles ?? [];
   if (sameBundle(summary.originalSkill, summary.bestSkill, summary.originalFiles, files)) {
-    throw new Error("Es gibt keine übernommenen Änderungen.");
+    throw new Error(t("backend.noChanges"));
   }
   const output = await saveSkillOutput({ destination: record.skillRoot, files,
     originalFiles: summary.originalFiles, create: summary.workflow === "create", stamp: stamp() });
@@ -495,9 +522,9 @@ async function writeBack(record: SessionRecord): Promise<{ backupPath: string | 
 }
 
 function parseSessionId(value: unknown): string {
-  if (typeof value !== "string") throw new Error("Training auswählen.");
+  if (typeof value !== "string") throw new Error(t("backend.chooseTraining"));
   const id = value.trim();
-  if (!id || id.length > 80 || /[^\w.-]/.test(id)) throw new Error("Ungültige Training-ID.");
+  if (!id || id.length > 80 || /[^\w.-]/.test(id)) throw new Error(t("backend.invalidTrainingId"));
   return id;
 }
 
@@ -560,7 +587,7 @@ function openRunPicker(): BrowserWindow {
     height: 780,
     minWidth: 680,
     minHeight: 520,
-    title: "Cursor-Läufe",
+    title: t("backend.cursorRuns"),
     backgroundColor: "#030509",
     icon: loadIcon(),
     ...(process.platform === "darwin"
@@ -597,9 +624,13 @@ function loadIcon(): NativeImage | undefined {
 
 function dialogParent(): BrowserWindow {
   if (windowRef && !windowRef.isDestroyed()) return windowRef;
-  throw new Error("Kein Fenster.");
+  throw new Error(t("backend.noWindow"));
 }
 
 function stamp(): string {
   return `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function t(key: TranslationKey, values?: Record<string, string | number>): string {
+  return translate(currentLocale, key, values);
 }

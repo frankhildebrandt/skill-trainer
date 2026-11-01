@@ -69,3 +69,10 @@ it("preserves explicit edit budgets and rejects invalid numeric limits", () => {
   expect(() => normalizeRequest(request({ budget: { ...budget, maxFileEdits: 0 } }))).toThrow(/Datei-Edits/);
   expect(() => normalizeRequest(request({ steps: 1.5 }))).toThrow(/ganze Zahl/);
 });
+
+
+it("localizes validation messages and numeric field labels", () => {
+  expect(() => normalizeRequest(request({ steps: 0 }), "fr")).toThrow("Étapes : la valeur doit être un entier positif.");
+  expect(() => normalizeRequest(request({ workspacePath: "" }), "nl")).toThrow("Kies de projectmap.");
+  expect(() => normalizeRequest(request({ runBudget: 3, verifyMode: "agent" }), "en")).toThrow("up to 5 agent runs");
+});

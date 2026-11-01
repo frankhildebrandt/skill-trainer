@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { translate, type Locale } from "../shared/i18n";
 import { Agent, CursorAgentError, type ConversationTurn, type SDKAgentInfo } from "@cursor/sdk";
 import {
   cursorProjectSlug,
@@ -49,10 +50,11 @@ export async function listRepoRuns(
   workspacePath: string,
   deps: RepoRunDeps = defaultDeps(),
   scope: "all" | "local" | "cloud" = "all",
+  locale: Locale = "de",
 ): Promise<CursorRunCatalog> {
   const resolved = path.resolve(workspacePath);
   const stat = await fs.stat(resolved).catch(() => null);
-  if (!stat?.isDirectory()) throw new Error("Zuerst einen Projektordner wählen.");
+  if (!stat?.isDirectory()) throw new Error(translate(locale, "runs.projectRequired"));
 
   const warnings: string[] = [];
   const repo = await deps.checkouts(resolved).catch(() => ({ paths: [resolved], remotes: [] as string[] }));
@@ -64,7 +66,7 @@ export async function listRepoRuns(
     try {
       return await readCheckoutTranscripts(checkout, deps.projectsRoot);
     } catch (err) {
-      warnings.push(`Lokale Läufe von ${path.basename(checkout)}: ${messageOf(err)}`);
+      warnings.push(translate(locale, "runs.localRunsError", { checkout: path.basename(checkout), message: messageOf(err) }));
       return [];
     }
   }))).flat() : [];
@@ -79,26 +81,26 @@ export async function listRepoRuns(
           localSdk.push(...agentRuns(agent, messages, "local", path.basename(checkout)));
         }
       } catch (err) {
-        warnings.push(`Lokale Agents von ${path.basename(checkout)}: ${messageOf(err)}`);
+        warnings.push(translate(locale, "runs.localAgentsError", { checkout: path.basename(checkout), message: messageOf(err) }));
       }
     }
   }
 
   let cloud: CursorRunOption[] = [];
   if (wantCloud && repo.remotes.length === 0) {
-    warnings.push("Ohne Git-Remote lassen sich Cloud-Agents diesem Repo nicht zuordnen.");
+    warnings.push(translate(locale, "runs.noRemote"));
   } else if (wantCloud) {
     try {
-      cloud = await cloudRunsForRemotes(repo.remotes, deps, warnings);
+      cloud = await cloudRunsForRemotes(repo.remotes, deps, warnings, locale);
     } catch (err) {
-      warnings.push(`Cloud-Agents: ${messageOf(err)}`);
+      warnings.push(translate(locale, "runs.cloudError", { message: messageOf(err) }));
     }
   }
 
   let runs = dedupeRuns([...localTranscripts, ...localSdk, ...cloud]);
   if (runs.length > MAX_RUNS) {
     runs = runs.slice(0, MAX_RUNS);
-    warnings.push("Es werden die neuesten 500 Läufe gezeigt.");
+    warnings.push(translate(locale, "runs.latestRuns", { count: MAX_RUNS.toLocaleString(locale) }));
   }
   return { workspacePath: resolved, runs, warnings };
 }
@@ -169,12 +171,12 @@ function agentRuns(agent: ListedAgent, messages: ChatTurn[], runtime: "local" | 
   }), agent.name);
 }
 
-async function cloudRunsForRemotes(remotes: string[], deps: RepoRunDeps, warnings: string[]): Promise<CursorRunOption[]> {
+async function cloudRunsForRemotes(remotes: string[], deps: RepoRunDeps, warnings: string[], locale: Locale): Promise<CursorRunOption[]> {
   const agents = (await deps.cloudAgents())
     .filter((agent) => agent.repos.some((repo) => remotes.some((remote) => sameRepo(repo, remote))))
     .sort((a, b) => (b.lastModified ?? 0) - (a.lastModified ?? 0));
   const selected = agents.slice(0, MAX_CLOUD_AGENTS);
-  if (agents.length > selected.length) warnings.push("Es werden die neuesten Cloud-Agents dieses Repos durchsucht.");
+  if (agents.length > selected.length) warnings.push(translate(locale, "runs.latestCloudAgents"));
   const runs: CursorRunOption[] = [];
   await mapPool(selected, 4, async (agent) => {
     try {
@@ -189,7 +191,7 @@ async function cloudRunsForRemotes(remotes: string[], deps: RepoRunDeps, warning
         runs.push(...fromRun.map((item, index) => ({ ...item, id: `${run.id}:${index}` })));
       }
     } catch (err) {
-      warnings.push(`Cloud-Agent ${agent.name || agent.agentId}: ${messageOf(err)}`);
+      warnings.push(translate(locale, "runs.cloudAgentError", { agent: agent.name || agent.agentId, message: messageOf(err) }));
     }
   });
   return runs;

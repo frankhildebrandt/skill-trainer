@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import { clampSizes, DEFAULT_SIZES, feedMax, PANE_LIMITS, panelMax, readSizes, type PaneSizes } from "./pane-layout";
+import { useI18n } from "./i18n";
 
 const STORAGE_KEY = "skill-trainer.panes";
 
@@ -58,6 +59,7 @@ export function ResizeHandle({
   initial: number;
   onChange: (value: number) => void;
 }) {
+  const { t } = useI18n();
   const drag = useRef<{ startX: number; startValue: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -106,7 +108,7 @@ export function ResizeHandle({
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
-      title={`${label} · ziehen, Doppelklick setzt zurück`}
+      title={t("form.resizeHint", { label })}
       className={dragging ? "resizer dragging" : "resizer"}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
