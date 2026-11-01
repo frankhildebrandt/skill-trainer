@@ -5,8 +5,6 @@ import path from "node:path";
 
 const HEAVY = new Set(["node_modules", ".venv", "venv", "target", ".next", "dist", "out", "build", "coverage", "__pycache__"]);
 
-const locks = new Map<string, Promise<void>>();
-
 export interface Isolation {
   dir: string;
   readonly baseCommit: string | null;
@@ -60,24 +58,19 @@ export async function createEmptyRepo(dest: string): Promise<Isolation> {
   });
 }
 
+/** Snapshot the working tree into a new git repo. The source checkout is only read. */
 export async function isolateWorkspace(src: string, dest: string): Promise<Isolation> {
   assertSafeWorkspace(src);
   const source = await fs.realpath(src);
+  await fs.rm(dest, { recursive: true, force: true });
   await fs.mkdir(path.dirname(dest), { recursive: true });
-  const git = await isGitRepo(source);
-
-  if (git) {
-    const key = await gitCommonDir(source);
-    await withLock(key, async () => {
-      await runGit(["worktree", "add", "--detach", dest, "HEAD"], source);
-    });
+  if (await isGitRepo(source)) {
+    await fs.mkdir(dest);
+    await archiveHead(source, dest);
     await copyDirty(source, dest);
-    await cloneHeavyDirs(source, dest);
-    const baseCommit = (await runGit(["rev-parse", "HEAD"], dest)).trim();
-    return holdIsolation(dest, baseCommit, () => removeWorktree(source, dest));
+  } else {
+    await copyTree(source, dest);
   }
-
-  await copyTree(source, dest);
   await cloneHeavyDirs(source, dest);
   await runGit(["init"], dest);
   await runGit(["add", "-A"], dest);
@@ -197,12 +190,54 @@ async function diffAgainst(dest: string, base: string): Promise<{ stat: string; 
   };
 }
 
-async function removeWorktree(src: string, dest: string): Promise<void> {
-  const key = await gitCommonDir(src).catch(() => src);
-  await withLock(key, async () => {
-    await runGit(["worktree", "remove", "--force", dest], src).catch(async () => {
-      await fs.rm(dest, { recursive: true, force: true });
-      await runGit(["worktree", "prune"], src).catch(() => undefined);
+function archiveHead(src: string, dest: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const git = spawn("git", ["archive", "--format=tar", "HEAD"], { cwd: src, env: gitEnv() });
+    const tar = spawn("tar", ["-x", "-C", dest]);
+    if (!git.stdout || !git.stderr || !tar.stdin || !tar.stderr) {
+      git.kill();
+      tar.kill();
+      reject(new Error("Die Projektkopie konnte nicht gestartet werden."));
+      return;
+    }
+    const errors: string[] = [];
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    git.stderr.setEncoding("utf8");
+    tar.stderr.setEncoding("utf8");
+    git.stderr.on("data", (chunk: string) => {
+      errors.push(chunk);
+    });
+    tar.stderr.on("data", (chunk: string) => {
+      errors.push(chunk);
+    });
+    git.stdout.pipe(tar.stdin);
+    let gitCode: number | null = null;
+    let tarCode: number | null = null;
+    const finish = () => {
+      if (gitCode === null || tarCode === null) return;
+      if (gitCode === 0 && tarCode === 0) succeed();
+      else fail(new Error(errors.join("").trim() || `Die Projektkopie ist fehlgeschlagen (${gitCode}/${tarCode}).`));
+    };
+    git.on("error", (error) => fail(error));
+    tar.on("error", (error) => fail(error));
+    git.on("close", (code) => {
+      gitCode = code ?? 1;
+      if (gitCode !== 0) tar.stdin?.end();
+      finish();
+    });
+    tar.on("close", (code) => {
+      tarCode = code ?? 1;
+      finish();
     });
   });
 }
@@ -218,11 +253,6 @@ async function isGitRepo(cwd: string): Promise<boolean> {
   }
 }
 
-async function gitCommonDir(cwd: string): Promise<string> {
-  const raw = (await runGit(["rev-parse", "--git-common-dir"], cwd)).trim();
-  return path.resolve(cwd, raw);
-}
-
 function gitIdentity(): NodeJS.ProcessEnv {
   return {
     GIT_AUTHOR_NAME: "skill-trainer",
@@ -232,24 +262,15 @@ function gitIdentity(): NodeJS.ProcessEnv {
   };
 }
 
-function withLock(key: string, fn: () => Promise<void>): Promise<void> {
-  const prev = locks.get(key) ?? Promise.resolve();
-  const run = prev.then(fn, fn);
-  locks.set(
-    key,
-    run.then(
-      () => undefined,
-      () => undefined,
-    ),
-  );
-  return run;
+function gitEnv(extraEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...process.env, GIT_OPTIONAL_LOCKS: "0", ...extraEnv };
 }
 
 function runGit(args: string[], cwd: string, extraEnv?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn("git", args, {
       cwd,
-      env: { ...process.env, ...extraEnv },
+      env: gitEnv(extraEnv),
     });
     let stdout = "";
     let stderr = "";
