@@ -3,23 +3,27 @@ import { ipcMain, app } from "electron";
 import { Cursor, CursorAgentError } from "@cursor/sdk";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AuthStatus, ModelOption, SessionSummary, TrainRequest, TrainerEvent, Trajectory } from "../shared/types";
+import type { AuthStatus, ModelOption, SessionSummary, SkillDraft, TrainRequest, TrainerEvent, Trajectory } from "../shared/types";
+import { aggregate } from "../shared/score";
 import { performAttempt } from "../trainer/attempt";
 import { CHECK_COMMAND, harvestChecks, plantChecks, writeChecks, type CheckFile } from "../trainer/checks";
 import { normalizeRequest } from "../trainer/config";
 import { executeAgent, isStartupError, proposeWithCursor } from "../trainer/cursor-runner";
+import { prepareSkillDraft } from "../trainer/draft";
 import { assertSafeWorkspace, createEmptyRepo, isolateWorkspace } from "../trainer/isolate";
-import { trainSkill, type AttemptCall } from "../trainer/loop";
+import { trainSkill, type AttemptCall, type TrainerDeps } from "../trainer/loop";
 import { isAbortError } from "../trainer/pool";
 import { buildCheckAuthorPrompt } from "../trainer/prompts";
 import { readSavedSettings, writeSavedSettings } from "./settings-store";
 import { loadSkillBundle, sameBundle, writeSkillTree, type SkillBundle } from "../trainer/skill-bundle";
 import { runVerify } from "../trainer/verify";
+import { saveSkillOutput } from "../trainer/skill-output";
 
 let windowRef: BrowserWindow | null = null;
 let active: AbortController | null = null;
 let lastSummary: SessionSummary | null = null;
 let lastSkillRoot: string | null = null;
+let writeInProgress = false;
 
 export function attachWindow(win: BrowserWindow): void {
   windowRef = win;
@@ -54,6 +58,15 @@ export function registerBackend(): void {
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
+  ipcMain.handle("dialog:skill-destination", async () => {
+    const result = await dialog.showSaveDialog(dialogParent(), {
+      title: "Neuen Skill-Ordner festlegen",
+      buttonLabel: "Ziel wählen",
+      defaultPath: "new-skill",
+      properties: ["createDirectory"],
+    });
+    return result.canceled ? null : (result.filePath ?? null);
+  });
   ipcMain.handle("settings:load", () => readSavedSettings());
   ipcMain.handle("settings:save", async (_event, request: TrainRequest) => {
     await writeSavedSettings(request);
@@ -70,11 +83,11 @@ export function registerBackend(): void {
     };
   });
   ipcMain.handle("trainer:start", async (_event, request: TrainRequest) => {
-    if (active) throw new Error("Es läuft schon ein Training.");
-    await writeSavedSettings(request);
+    if (active || writeInProgress) throw new Error("Es läuft schon ein Training oder Speichervorgang.");
     const controller = new AbortController();
     active = controller;
     try {
+      await writeSavedSettings(request);
       const summary = await runSession(request, controller);
       lastSummary = summary;
       return { sessionDir: summary.sessionDir };
@@ -85,7 +98,15 @@ export function registerBackend(): void {
   ipcMain.handle("trainer:cancel", async () => {
     active?.abort();
   });
-  ipcMain.handle("trainer:writeBack", () => writeBack());
+  ipcMain.handle("trainer:writeBack", async () => {
+    if (active || writeInProgress) throw new Error("Es läuft schon ein Training oder Speichervorgang.");
+    writeInProgress = true;
+    try {
+      return await writeBack();
+    } finally {
+      writeInProgress = false;
+    }
+  });
   ipcMain.handle("shell:open", async (_event, target: string) => {
     const error = await shell.openPath(target);
     if (error) throw new Error(error);
@@ -94,65 +115,112 @@ export function registerBackend(): void {
 
 async function runSession(request: TrainRequest, controller: AbortController): Promise<SessionSummary> {
   const config = normalizeRequest(request);
-  assertSafeWorkspace(config.workspacePath);
-  const workspaceStat = await fs.stat(config.workspacePath);
-  if (!workspaceStat.isDirectory()) throw new Error("Der Projektpfad ist kein Ordner.");
-
-  const bundle = await loadSkillBundle(config.skillPath);
-  const skill = bundle.document;
+  if (config.trainAfterDraft) {
+    assertSafeWorkspace(config.workspacePath);
+    const workspaceStat = await fs.stat(config.workspacePath);
+    if (!workspaceStat.isDirectory()) throw new Error("Der Projektpfad ist kein Ordner.");
+  }
+  const bundle = config.workflow === "create" ? await newSkillBundle(config) : await loadSkillBundle(config.skillPath);
   lastSummary = null;
   lastSkillRoot = bundle.root;
   const sessionDir = path.join(app.getPath("userData"), "sessions", stamp());
   await fs.mkdir(path.join(sessionDir, "runs"), { recursive: true });
-  await fs.writeFile(path.join(sessionDir, "original.md"), skill);
+  await fs.writeFile(path.join(sessionDir, "original.md"), bundle.document);
   await writeSkillTree(path.join(sessionDir, "original-skill"), bundle.files);
-  await fs.writeFile(
-    path.join(sessionDir, "request.json"),
-    JSON.stringify({ ...config, attemptTimeoutMs: config.attemptTimeoutMs }, null, 2),
-  );
+  await fs.writeFile(path.join(sessionDir, "request.json"), JSON.stringify(config, null, 2));
 
   const emit = (event: TrainerEvent) => {
-    if (event.type === "done") lastSummary = event.summary;
     void fs.appendFile(path.join(sessionDir, "events.jsonl"), `${JSON.stringify(event)}\n`).catch(() => undefined);
     if (windowRef && !windowRef.isDestroyed()) windowRef.webContents.send("trainer:event", event);
   };
-
-  const grading: Grading = { verifyCommand: config.verifyCommand, checks: [] };
+  const propose = sessionProposer(config, sessionDir, emit);
+  let draft: SkillDraft | undefined;
+  let summary: SessionSummary = {
+    workflow: config.workflow, fineTuned: false,
+    originalSkill: bundle.document, bestSkill: bundle.document,
+    originalFiles: bundle.files, bestFiles: bundle.files,
+    baseline: aggregate([]), best: aggregate([]), steps: [], rejected: [], cancelled: false, sessionDir,
+  };
   try {
-    if (config.verifyMode === "agent") {
-      emit({ type: "phase", phase: "checks" });
-      emit({
-        type: "log",
-        message: "Der Agent schreibt das Testskript, bevor ein Trainingslauf startet.",
-      });
-      const authored = await authorChecks(config, sessionDir, controller, emit);
-      grading.verifyCommand = authored.command;
-      grading.checks = authored.files;
+    if (config.workflow !== "train") {
+      draft = await prepareSkillDraft(config, bundle, controller.signal, propose, emit);
+      summary = { ...summary, draft, bestSkill: draft.skill, bestFiles: draft.files };
+      await fs.writeFile(path.join(sessionDir, "draft.md"), draft.skill);
+      await writeSkillTree(path.join(sessionDir, "draft-skill"), draft.files);
     }
-    emit({ type: "phase", phase: "preflight" });
-    emit({
-      type: "log",
-      message: config.gateOnEmptyRepo
+    if (config.trainAfterDraft) {
+      const grading: Grading = { verifyCommand: config.verifyCommand, checks: [] };
+      if (config.verifyMode === "agent") {
+        emit({ type: "phase", phase: "checks" });
+        emit({ type: "log", message: "Der Agent schreibt das Testskript, bevor ein Trainingslauf startet." });
+        const authored = await authorChecks(config, sessionDir, controller, emit);
+        grading.verifyCommand = authored.command;
+        grading.checks = authored.files;
+      }
+      emit({ type: "phase", phase: "preflight" });
+      emit({ type: "log", message: config.gateOnEmptyRepo
         ? "Vorprüfung: auf einem leeren Repository muss der Prüfbefehl noch fehlschlagen. Training und Gate sehen den Projektcode nicht."
-        : "Vorprüfung: der Prüfbefehl muss auf einer frischen Kopie noch fehlschlagen.",
-    });
-    return await runPrepared(config, bundle, grading, sessionDir, controller, emit);
+        : "Vorprüfung: der Prüfbefehl muss auf einer frischen Kopie noch fehlschlagen." });
+      const prepared = draft ? { ...bundle, document: draft.skill, files: draft.files } : bundle;
+      const result = await runPrepared(config, prepared, grading, sessionDir, controller, (event) => {
+        if (event.type !== "done") emit(event);
+      }, propose);
+      summary = { ...result, workflow: config.workflow, draft, fineTuned: result.baseline.runs > 0,
+        originalSkill: bundle.document, originalFiles: bundle.files };
+    }
   } catch (err) {
-    if (!isAbortError(err)) throw err;
-    const summary: SessionSummary = {
-      originalSkill: skill,
-      bestSkill: skill,
-      baseline: { gate: 0, hard: 0, soft: 0, runs: 0, passes: 0 },
-      best: { gate: 0, hard: 0, soft: 0, runs: 0, passes: 0 },
-      steps: [],
-      rejected: [],
-      cancelled: true,
-      sessionDir,
-    };
-    emit({ type: "log", message: "Abgebrochen." });
-    emit({ type: "done", summary });
-    return summary;
+    if (isAbortError(err) || controller.signal.aborted) {
+      summary.cancelled = true;
+      emit({ type: "log", message: "Abgebrochen. Ein vorbereiteter Entwurf bleibt erhalten." });
+    } else {
+      summary.error = explain(err).message;
+      emit({ type: "error", message: summary.error });
+    }
   }
+  await fs.writeFile(path.join(sessionDir, "best.md"), summary.bestSkill);
+  await writeSkillTree(path.join(sessionDir, "best-skill"), summary.bestFiles ?? bundle.files);
+  await fs.writeFile(path.join(sessionDir, "summary.json"), JSON.stringify(summarize(summary), null, 2));
+  lastSummary = summary;
+  emit({ type: "done", summary });
+  return summary;
+}
+
+async function newSkillBundle(config: ReturnType<typeof normalizeRequest>): Promise<SkillBundle> {
+  const root = path.resolve(config.skillPath);
+  try {
+    await fs.lstat(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { root, document: "", files: [], name: config.skillName };
+    }
+    throw error;
+  }
+  throw new Error("Der Zielordner existiert schon. Wähle für Create-Skill einen neuen Ordner.");
+}
+
+function sessionProposer(
+  config: ReturnType<typeof normalizeRequest>,
+  sessionDir: string,
+  emit: (event: TrainerEvent) => void,
+): TrainerDeps["propose"] {
+  let counter = 0;
+  return async (input) => {
+    const runId = `optimizer-${++counter}`;
+    const title = input.kind === "create" ? "Skill erstellen" : input.kind === "pretrain" ? "Vortraining" : "Optimierer";
+    emit({ type: "log", message: `${title}: Skill-Ordner mit ${config.budget.unlimited ? "unbegrenztem" : "konfiguriertem"} Edit-Budget überarbeiten.` });
+    emit({ type: "run_activity", runId, title });
+    const cwd = path.join(sessionDir, "optimizer", runId);
+    await fs.mkdir(cwd, { recursive: true });
+    try {
+      const proposal = await proposeWithCursor({ ...input, model: config.optimizerModel, cwd,
+        onActivity: (update) => emit({ type: "run_activity", runId, update }) });
+      emit({ type: "run_activity", runId, update: { op: "note", text: "Vorschlag ist da." }, settled: true });
+      return proposal;
+    } catch (err) {
+      emit({ type: "run_activity", runId, update: { op: "note", text: explain(err).message }, settled: true });
+      throw err;
+    }
+  };
 }
 
 interface Grading {
@@ -211,6 +279,7 @@ async function runPrepared(
   sessionDir: string,
   controller: AbortController,
   emit: (event: TrainerEvent) => void,
+  propose: TrainerDeps["propose"],
 ): Promise<SessionSummary> {
   const skill = bundle.document;
   const preflightDir = path.join(sessionDir, "preflight");
@@ -243,7 +312,6 @@ async function runPrepared(
   }
 
   let counter = 0;
-  let optimizerCount = 0;
   const summary = await trainSkill(
     {
       skill,
@@ -255,6 +323,7 @@ async function runPrepared(
       selectionRepeats: config.selectionRepeats,
       concurrency: config.concurrency,
       learningRate: config.learningRate,
+      budget: config.budget,
       slowUpdate: config.slowUpdate,
       gateOnEmptyRepo: config.gateOnEmptyRepo,
       skillScope: config.skillScope,
@@ -265,33 +334,11 @@ async function runPrepared(
     },
     {
       emit,
-      propose: async (input) => {
-        const runId = `optimizer-${++optimizerCount}`;
-        emit({ type: "log", message: "Optimierer liest die Läufe und schlägt begrenzte Edits vor." });
-        emit({ type: "run_activity", runId, title: "Optimierer" });
-        const dir = path.join(sessionDir, "optimizer");
-        await fs.mkdir(dir, { recursive: true });
-        try {
-          const proposal = await proposeWithCursor({
-            ...input,
-            model: config.optimizerModel,
-            cwd: dir,
-            onActivity: (update) => emit({ type: "run_activity", runId, update }),
-          });
-          emit({ type: "run_activity", runId, update: { op: "note", text: "Vorschlag ist da." }, settled: true });
-          return proposal;
-        } catch (err) {
-          emit({ type: "run_activity", runId, update: { op: "note", text: explain(err).message }, settled: true });
-          throw err;
-        }
-      },
+      propose,
       runAttempt: (input) => runOne(input, config, grading, sessionDir, () => `${input.phase}-${++counter}`, emit),
     },
   );
 
-  await fs.writeFile(path.join(sessionDir, "best.md"), summary.bestSkill);
-  await writeSkillTree(path.join(sessionDir, "best-skill"), summary.bestFiles ?? bundle.files);
-  await fs.writeFile(path.join(sessionDir, "summary.json"), JSON.stringify(summarize(summary), null, 2));
   return summary;
 }
 
@@ -365,16 +412,16 @@ async function runOne(
   }
 }
 
-async function writeBack(): Promise<{ backupPath: string; skillPath: string }> {
+async function writeBack(): Promise<{ backupPath: string | null; skillPath: string }> {
   if (!lastSummary || !lastSkillRoot) throw new Error("Noch kein abgeschlossener Lauf.");
-  const files = lastSummary.bestFiles ?? [];
-  if (sameBundle(lastSummary.originalSkill, lastSummary.bestSkill, lastSummary.originalFiles, files)) {
-    throw new Error("Kein übernommener Skill. Das Gate hat keine Verbesserung durchgelassen.");
+  const summary = lastSummary;
+  const files = summary.bestFiles ?? [];
+  if (sameBundle(summary.originalSkill, summary.bestSkill, summary.originalFiles, files)) {
+    throw new Error("Es gibt keine übernommenen Änderungen.");
   }
-  const backupPath = `${lastSkillRoot}.bak-${stamp()}`;
-  await fs.cp(lastSkillRoot, backupPath, { recursive: true });
-  await writeSkillTree(lastSkillRoot, files);
-  return { backupPath, skillPath: lastSkillRoot };
+  const output = await saveSkillOutput({ destination: lastSkillRoot, files,
+    originalFiles: summary.originalFiles, create: summary.workflow === "create", stamp: stamp() });
+  return output;
 }
 
 async function readAuth(): Promise<AuthStatus> {

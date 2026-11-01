@@ -9,6 +9,8 @@ const MAX_ADDED_CHARS = 2500;
 export interface ApplyOptions {
   limit: number;
   maxAddedChars?: number;
+  maxEditChars?: number;
+  protectSlowRegion?: boolean;
 }
 
 export interface ApplyResult {
@@ -20,6 +22,7 @@ export interface ApplyResult {
 export function applyEdits(skill: string, edits: SkillEdit[], options: ApplyOptions): ApplyResult {
   const limit = Math.max(0, options.limit);
   const maxAdded = options.maxAddedChars ?? MAX_ADDED_CHARS;
+  const maxEditChars = options.maxEditChars ?? MAX_EDIT_CHARS;
   const applied: SkillEdit[] = [];
   const skipped: SkippedEdit[] = [];
   let next = skill;
@@ -30,7 +33,7 @@ export function applyEdits(skill: string, edits: SkillEdit[], options: ApplyOpti
       skipped.push({ edit, reason: "Lernrate erreicht" });
       continue;
     }
-    const outcome = applyOne(next, edit, maxAdded - added);
+    const outcome = applyOne(next, edit, maxAdded - added, maxEditChars, options.protectSlowRegion !== false);
     if (outcome.ok) {
       next = outcome.skill;
       added += outcome.added;
@@ -43,8 +46,8 @@ export function applyEdits(skill: string, edits: SkillEdit[], options: ApplyOpti
   return { skill: next, applied, skipped };
 }
 
-export function setSlowRegion(skill: string, lessons: string): string {
-  const body = lessons.trim().slice(0, 2000);
+export function setSlowRegion(skill: string, lessons: string, maxChars = 2000): string {
+  const body = lessons.trim().slice(0, maxChars);
   if (!body) return skill;
   const block = `${SLOW_START}\n${body}\n${SLOW_END}`;
   const start = skill.indexOf(SLOW_START);
@@ -60,33 +63,36 @@ function applyOne(
   skill: string,
   edit: SkillEdit,
   room: number,
+  maxEditChars: number,
+  protectSlowRegion: boolean,
 ): { ok: true; skill: string; added: number } | { ok: false; reason: string } {
-  if (edit.op !== "delete" && edit.op !== "append" && !edit.content.trim()) {
+  if (edit.op !== "delete" && !edit.content.trim()) {
     return { ok: false, reason: "leerer Inhalt" };
   }
-  if (edit.content.length > MAX_EDIT_CHARS) {
+  if (edit.content.length > maxEditChars) {
     return { ok: false, reason: "Edit ist zu lang" };
   }
 
   if (edit.op === "append") {
     const chunk = edit.content.replace(/^\n*/, "\n");
     if (chunk.trim().length > room) return { ok: false, reason: "Zeichenbudget erreicht" };
-    return { ok: true, skill: insertBeforeSlow(skill, chunk), added: chunk.trim().length };
+    return { ok: true, skill: insertBeforeSlow(skill, chunk, protectSlowRegion), added: chunk.trim().length };
   }
 
   if (!edit.target) return { ok: false, reason: "Zieltext fehlt" };
-  const hits = countOutsideSlow(skill, edit.target);
+  const span = protectSlowRegion ? slowSpan(skill) : null;
+  const hits = countOutsideSlow(skill, edit.target, span);
   if (hits === 0) return { ok: false, reason: "Zieltext nicht gefunden" };
   if (hits > 1) return { ok: false, reason: "Zieltext ist nicht eindeutig" };
 
   if (edit.op === "delete") {
-    return { ok: true, skill: replaceOutsideSlow(skill, edit.target, ""), added: 0 };
+    return { ok: true, skill: replaceOutsideSlow(skill, edit.target, "", span), added: 0 };
   }
 
   if (edit.op === "replace") {
     const added = Math.max(0, edit.content.length - edit.target.length);
     if (added > room) return { ok: false, reason: "Zeichenbudget erreicht" };
-    return { ok: true, skill: replaceOutsideSlow(skill, edit.target, edit.content), added };
+    return { ok: true, skill: replaceOutsideSlow(skill, edit.target, edit.content, span), added };
   }
 
   if (edit.op === "insert_after") {
@@ -94,7 +100,7 @@ function applyOne(
     if (chunk.trim().length > room) return { ok: false, reason: "Zeichenbudget erreicht" };
     return {
       ok: true,
-      skill: replaceOutsideSlow(skill, edit.target, `${edit.target}${chunk}`),
+      skill: replaceOutsideSlow(skill, edit.target, `${edit.target}${chunk}`, span),
       added: chunk.trim().length,
     };
   }
@@ -109,22 +115,20 @@ function slowSpan(skill: string): { start: number; end: number } | null {
   return { start, end: end + SLOW_END.length };
 }
 
-function countOutsideSlow(skill: string, needle: string): number {
-  const span = slowSpan(skill);
+function countOutsideSlow(skill: string, needle: string, span: { start: number; end: number } | null): number {
   let count = 0;
   let from = 0;
   while (from <= skill.length) {
     const at = skill.indexOf(needle, from);
     if (at === -1) break;
-    const inside = span !== null && at >= span.start && at < span.end;
+    const inside = span !== null && at < span.end && at + needle.length > span.start;
     if (!inside) count += 1;
     from = at + Math.max(needle.length, 1);
   }
   return count;
 }
 
-function replaceOutsideSlow(skill: string, needle: string, replacement: string): string {
-  const span = slowSpan(skill);
+function replaceOutsideSlow(skill: string, needle: string, replacement: string, span: { start: number; end: number } | null): string {
   const at = indexOutside(skill, needle, span);
   if (at === -1) return skill;
   return skill.slice(0, at) + replacement + skill.slice(at + needle.length);
@@ -135,15 +139,15 @@ function indexOutside(skill: string, needle: string, span: { start: number; end:
   while (from <= skill.length) {
     const at = skill.indexOf(needle, from);
     if (at === -1) return -1;
-    const inside = span !== null && at >= span.start && at < span.end;
+    const inside = span !== null && at < span.end && at + needle.length > span.start;
     if (!inside) return at;
     from = at + Math.max(needle.length, 1);
   }
   return -1;
 }
 
-function insertBeforeSlow(skill: string, chunk: string): string {
-  const span = slowSpan(skill);
+function insertBeforeSlow(skill: string, chunk: string, protectSlowRegion: boolean): string {
+  const span = protectSlowRegion ? slowSpan(skill) : null;
   if (!span) return skill.replace(/\s*$/, "") + chunk + "\n";
   const head = skill.slice(0, span.start).replace(/\s*$/, "");
   return `${head}${chunk}\n\n${skill.slice(span.start)}`;

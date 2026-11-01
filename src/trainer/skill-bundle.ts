@@ -3,11 +3,7 @@ import path from "node:path";
 import type { FileEdit, SkillFile, SkippedEdit } from "../shared/types";
 import { frontmatterName } from "./skill-file";
 
-const SKIP_DIRS = new Set([".git", "node_modules", ".venv", "venv", "dist", "out", "build", "coverage", "__pycache__", ".next", "target"]);
-const MAX_FILES = 60;
-const MAX_TEXT_CHARS = 120_000;
-const MAX_BINARY_BYTES = 400_000;
-const MAX_TOTAL_BYTES = 2_000_000;
+const SKIP_DIRS = new Set([".git", "node_modules", ".venv", "venv", "__pycache__"]);
 const MAX_WRITE_CHARS = 12_000;
 
 export interface SkillBundle {
@@ -39,7 +35,6 @@ export async function resolveSkillRoot(picked: string): Promise<string> {
 export async function loadSkillBundle(picked: string): Promise<SkillBundle> {
   const root = await resolveSkillRoot(picked);
   const document = await fs.readFile(path.join(root, "SKILL.md"), "utf8");
-  if (document.length > 200_000) throw new Error("Die SKILL.md ist größer als 200 KB.");
   const files = await collectFiles(root);
   if (!files.some((file) => file.path === "SKILL.md")) {
     files.unshift({ path: "SKILL.md", text: document });
@@ -58,7 +53,7 @@ export function withDocument(files: SkillFile[], document: string): SkillFile[] 
   const next = files.map((file) => {
     if (file.path !== "SKILL.md") return file;
     found = true;
-    return { path: "SKILL.md", text };
+    return { path: "SKILL.md", text, ...(file.executable === undefined ? {} : { executable: file.executable }) };
   });
   if (!found) next.unshift({ path: "SKILL.md", text });
   return next;
@@ -69,7 +64,7 @@ export function sameBundle(leftDoc: string, rightDoc: string, left: SkillFile[] 
   if (left.length !== right.length) return false;
   for (const file of right) {
     const other = left.find((item) => item.path === file.path);
-    if (!other || other.text !== file.text || other.base64 !== file.base64) return false;
+    if (!other || other.text !== file.text || other.base64 !== file.base64 || other.executable !== file.executable) return false;
   }
   return true;
 }
@@ -85,6 +80,10 @@ export async function writeSkillTree(destRoot: string, files: SkillFile[]): Prom
     await fs.mkdir(path.dirname(target), { recursive: true });
     if (file.base64) await fs.writeFile(target, Buffer.from(file.base64, "base64"));
     else await fs.writeFile(target, file.text ?? "");
+    if (file.executable !== undefined) {
+      const stat = await fs.stat(target);
+      await fs.chmod(target, file.executable ? stat.mode | 0o111 : stat.mode & ~0o111);
+    }
   }
 }
 
@@ -94,7 +93,12 @@ export interface FileApplyResult {
   skipped: SkippedEdit[];
 }
 
-export function applyFileEdits(files: SkillFile[], edits: FileEdit[], limit: number): FileApplyResult {
+export interface FileApplyOptions {
+  maxFileChars?: number;
+  allowSkillDocument?: boolean;
+}
+
+export function applyFileEdits(files: SkillFile[], edits: FileEdit[], limit: number, options: FileApplyOptions = {}): FileApplyResult {
   const next = files.map((file) => ({ ...file }));
   const applied: FileEdit[] = [];
   const skipped: SkippedEdit[] = [];
@@ -108,11 +112,11 @@ export function applyFileEdits(files: SkillFile[], edits: FileEdit[], limit: num
       skipped.push({ edit: asSkillEdit(edit), reason: "Pfad ist ungültig" });
       continue;
     }
-    if (relative === "SKILL.md") {
+    if (relative === "SKILL.md" && (!options.allowSkillDocument || edit.op === "delete")) {
       skipped.push({ edit: asSkillEdit(edit), reason: "SKILL.md wird über die Text-Edits geändert" });
       continue;
     }
-    const outcome = applyFile(next, { ...edit, path: relative });
+    const outcome = applyFile(next, { ...edit, path: relative }, options.maxFileChars ?? MAX_WRITE_CHARS);
     if (outcome.ok) applied.push({ ...edit, path: relative });
     else skipped.push({ edit: asSkillEdit(edit), reason: outcome.reason });
   }
@@ -121,7 +125,6 @@ export function applyFileEdits(files: SkillFile[], edits: FileEdit[], limit: num
 
 async function collectFiles(root: string): Promise<SkillFile[]> {
   const files: SkillFile[] = [];
-  let total = 0;
   async function walk(dir: string): Promise<void> {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
@@ -134,33 +137,42 @@ async function collectFiles(root: string): Promise<SkillFile[]> {
         continue;
       }
       if (!entry.isFile()) continue;
-      if (files.length >= MAX_FILES) throw new Error(`Der Skill-Ordner hat mehr als ${MAX_FILES} Dateien.`);
       const relative = path.relative(root, full).split(path.sep).join("/");
       const buf = await fs.readFile(full);
-      total += buf.length;
-      if (total > MAX_TOTAL_BYTES) throw new Error("Der Skill-Ordner ist größer als 2 MB.");
+      const stat = await fs.stat(full);
+      const executable = (stat.mode & 0o111) !== 0;
       if (buf.includes(0)) {
-        if (buf.length > MAX_BINARY_BYTES) throw new Error(`${relative} ist als Binärdatei zu groß.`);
-        files.push({ path: relative, base64: buf.toString("base64") });
+        files.push({ path: relative, base64: buf.toString("base64"), executable });
         continue;
       }
       const text = buf.toString("utf8");
-      if (text.length > MAX_TEXT_CHARS) throw new Error(`${relative} ist größer als ${MAX_TEXT_CHARS} Zeichen.`);
-      files.push({ path: relative, text });
+      files.push({ path: relative, text, executable });
     }
   }
   await walk(root);
   return files;
 }
 
-function applyFile(files: SkillFile[], edit: FileEdit): { ok: true } | { ok: false; reason: string } {
+function applyFile(files: SkillFile[], edit: FileEdit, maxFileChars: number): { ok: true } | { ok: false; reason: string } {
+  if (edit.op === "delete") {
+    const index = files.findIndex((file) => file.path === edit.path);
+    if (index === -1) return { ok: false, reason: "Datei nicht gefunden" };
+    files.splice(index, 1);
+    return { ok: true };
+  }
+  if (edit.content.length > maxFileChars) return { ok: false, reason: "Datei-Edit ist zu lang" };
   if (edit.op === "write") {
-    if (!edit.content.trim()) return { ok: false, reason: "leerer Inhalt" };
-    if (edit.content.length > MAX_WRITE_CHARS) return { ok: false, reason: "Datei-Edit ist zu lang" };
+    if (edit.path === "SKILL.md" && !edit.content.trim()) return { ok: false, reason: "SKILL.md darf nicht leer sein" };
+    if (files.some((file) => file.path.startsWith(`${edit.path}/`) || edit.path.startsWith(`${file.path}/`))) {
+      return { ok: false, reason: "Dateipfad kollidiert mit einem Ordner" };
+    }
     const existing = files.find((file) => file.path === edit.path);
-    if (existing?.base64) return { ok: false, reason: "Binärdatei bleibt unverändert" };
-    if (existing) existing.text = edit.content.endsWith("\n") ? edit.content : `${edit.content}\n`;
-    else files.push({ path: edit.path, text: edit.content.endsWith("\n") ? edit.content : `${edit.content}\n` });
+    const text = edit.content && !edit.content.endsWith("\n") ? `${edit.content}\n` : edit.content;
+    if (existing) {
+      existing.text = text;
+      delete existing.base64;
+      if (edit.executable !== undefined) existing.executable = edit.executable;
+    } else files.push({ path: edit.path, text, executable: edit.executable ?? text.startsWith("#!") });
     return { ok: true };
   }
   const existing = files.find((file) => file.path === edit.path);
@@ -169,13 +181,20 @@ function applyFile(files: SkillFile[], edit: FileEdit): { ok: true } | { ok: fal
   const hits = existing.text.split(edit.target).length - 1;
   if (hits === 0) return { ok: false, reason: "Zieltext nicht gefunden" };
   if (hits > 1) return { ok: false, reason: "Zieltext ist nicht eindeutig" };
-  existing.text = existing.text.replace(edit.target, edit.content);
+  const text = existing.text.replace(edit.target, () => edit.content);
+  if (edit.path === "SKILL.md" && !text.trim()) return { ok: false, reason: "SKILL.md darf nicht leer sein" };
+  existing.text = text;
+  if (edit.executable !== undefined) existing.executable = edit.executable;
   return { ok: true };
 }
 
 export function sanitizeRelative(value: string): string | null {
   const normalized = value.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (!normalized || path.isAbsolute(value) || normalized.split("/").some((part) => part === ".." || part === "")) {
+  if (
+    !normalized || path.isAbsolute(normalized) || path.win32.isAbsolute(value) ||
+    /^[a-z]:/i.test(normalized) || /[\u0000-\u001f\u007f]/.test(normalized) ||
+    normalized.split("/").some((part) => part === ".." || part === "." || part === "" || part.toLowerCase() === ".git")
+  ) {
     return null;
   }
   return normalized;

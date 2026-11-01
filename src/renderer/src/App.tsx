@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { estimateRuns } from "@shared/estimate";
 import { applyRunUpdate, type RunBlock } from "@shared/run-log";
 import { changedLines } from "@shared/text-diff";
@@ -16,8 +16,6 @@ import {
   BrandMark,
   CheckIcon,
   ExternalIcon,
-  FileIcon,
-  FolderIcon,
   PlayIcon,
   PulseIcon,
   SparkIcon,
@@ -25,6 +23,8 @@ import {
   TerminalIcon,
 } from "./icons";
 import { MarkdownView } from "./MarkdownView";
+import { TrainerForm } from "./TrainerForm";
+import { bundleChanged, measuredImprovement, reportBody, resultTitle } from "./report";
 import { ResizeHandle, usePaneSizes } from "./ResizeHandle";
 
 interface LiveRun {
@@ -48,6 +48,11 @@ type FeedItem =
   | { id: number; type: "report" };
 
 const EMPTY: TrainRequest = {
+  workflow: "train",
+  skillName: "",
+  skillBrief: "",
+  trainAfterDraft: true,
+  runBudget: 48,
   skillPath: "",
   workspacePath: "",
   auftrag: "",
@@ -110,7 +115,7 @@ export function App() {
       if (cancelled) return;
       if (saved) {
         setForm(saved);
-        if (saved.skillPath) {
+        if (saved.skillPath && saved.workflow !== "create") {
           try {
             const preview = await api.readSkill(saved.skillPath);
             if (!cancelled) setSkillName(skillLabel(preview));
@@ -216,16 +221,14 @@ export function App() {
     return () => clearInterval(timer);
   }, [anyLive]);
 
-  const estimate = useMemo(
-    () =>
-      estimateRuns({
-        steps: form.steps,
-        trainBatch: form.trainBatch,
-        selectionRepeats: form.selectionRepeats,
-        slowUpdate: form.slowUpdate,
-      }),
-    [form.steps, form.trainBatch, form.selectionRepeats, form.slowUpdate],
-  );
+  const hasDraft = form.workflow === "create" || form.workflow === "pretrain";
+  const fineTune = !hasDraft || form.trainAfterDraft !== false;
+  const estimate = useMemo(() => {
+    const train = fineTune ? estimateRuns(form) : { attempts: 0, optimizer: 0 };
+    const checks = fineTune && form.verifyMode === "agent" ? 1 : 0;
+    const optimizer = train.optimizer + (hasDraft ? 1 : 0);
+    return { attempts: train.attempts, checks, optimizer, total: train.attempts + checks + optimizer };
+  }, [fineTune, hasDraft, form.steps, form.trainBatch, form.selectionRepeats, form.slowUpdate, form.verifyMode]);
 
   if (!api) {
     return <main className="fallback">Skill Trainer läuft nur in der Electron-App.</main>;
@@ -254,6 +257,11 @@ export function App() {
       setSkillName(null);
       pushFeed({ type: "note", text: messageOf(err) });
     }
+  }
+
+  async function chooseDestination() {
+    const picked = await api.pickSkillDestination();
+    if (picked) setForm((prev) => ({ ...prev, skillPath: picked }));
   }
 
   async function chooseFolder() {
@@ -286,7 +294,7 @@ export function App() {
     setNotice(null);
     try {
       const result = await api.writeBack();
-      setNotice(`Übernommen nach ${result.skillPath}. Backup: ${result.backupPath}`);
+      setNotice(`Übernommen nach ${result.skillPath}.${result.backupPath ? ` Backup: ${result.backupPath}` : ""}`);
     } catch (err) {
       setNotice(messageOf(err));
     }
@@ -309,7 +317,6 @@ export function App() {
 
   const improved = summary ? bundleChanged(summary) : false;
   const activeRun = runs.find((run) => run.runId === active);
-  const runCount = estimate.attempts + (form.verifyMode === "agent" ? 1 : 0);
   const liveCount = runs.filter((run) => isLive(run)).length;
   const loggedIn = auth?.state === "logged-in";
 
@@ -330,7 +337,7 @@ export function App() {
               {liveCount > 0 ? <span className="status-count">{liveCount} aktiv</span> : null}
             </span>
           ) : summary ? (
-            <span className={improved ? "status-pill good" : "status-pill"}>{resultTitle(summary, improved)}</span>
+            <span className={improved ? "status-pill good" : "status-pill"}>{resultTitle(summary)}</span>
           ) : null}
         </div>
         <div className="auth">
@@ -358,158 +365,25 @@ export function App() {
           }}
         >
           <div className="panel-scroll">
-            <Group title="Quelle">
-              <label>
-                Skill
-                <div className="row">
-                  <input readOnly value={form.skillPath} title={form.skillPath} placeholder="Ordner oder SKILL.md" />
-                  <button type="button" onClick={() => void chooseSkill()} disabled={running}>
-                    <FileIcon />
-                    Wählen
-                  </button>
-                </div>
-                {skillName ? (
-                  <small className="chip">
-                    <CheckIcon />
-                    {skillName}
-                  </small>
-                ) : null}
-              </label>
-
-              <label>
-                Projekt
-                <div className="row">
-                  <input readOnly value={form.workspacePath} title={form.workspacePath} placeholder="Projektordner" />
-                  <button type="button" onClick={() => void chooseFolder()} disabled={running}>
-                    <FolderIcon />
-                    Wählen
-                  </button>
-                </div>
-              </label>
-            </Group>
-
-            <Group title="Aufgabe">
-              <label>
-                Auftrag
-                <textarea
-                  value={form.auftrag}
-                  onChange={(event) => setForm({ ...form, auftrag: event.target.value })}
-                  rows={4}
-                  placeholder="Was der Agent können soll"
-                />
-              </label>
-
-              <label>
-                Weitere Aufträge
-                <textarea
-                  value={form.extraTasks}
-                  onChange={(event) => setForm({ ...form, extraTasks: event.target.value })}
-                  rows={2}
-                  placeholder="Eine Zeile pro Variante"
-                />
-              </label>
-
-              <Segmented
-                legend="Ziel"
-                name="skillScope"
-                disabled={running}
-                value={form.skillScope === "specific" ? "specific" : "general"}
-                options={[
-                  { value: "general", label: "Allgemein" },
-                  { value: "specific", label: "Dieser Auftrag" },
-                ]}
-                onChange={(skillScope) => setForm({ ...form, skillScope })}
-              />
-            </Group>
-
-            <Group title="Prüfung">
-              <Segmented
-                legend="Prüfung"
-                hideLegend
-                name="verifyMode"
-                disabled={running}
-                value={form.verifyMode}
-                options={[
-                  { value: "command", label: "Testbefehl" },
-                  { value: "agent", label: "Agent schreibt das Testskript" },
-                ]}
-                onChange={(verifyMode) => setForm({ ...form, verifyMode })}
-              />
-
-              {form.verifyMode === "command" ? (
-                <label className="reveal">
-                  Testbefehl
-                  <input
-                    className="mono-input"
-                    value={form.verifyCommand}
-                    onChange={(event) => setForm({ ...form, verifyCommand: event.target.value })}
-                    placeholder="npm test"
-                    disabled={running}
-                  />
-                </label>
-              ) : null}
-            </Group>
-
-            <Group title="Modelle">
-              <div className="grid">
-                <label>
-                  Zielmodell
-                  <select value={form.targetModel} onChange={(event) => setForm({ ...form, targetModel: event.target.value })}>
-                    {modelChoices(models, form.targetModel).map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Optimierer
-                  <select
-                    value={form.optimizerModel}
-                    onChange={(event) => setForm({ ...form, optimizerModel: event.target.value })}
-                  >
-                    {modelChoices(models, form.optimizerModel).map((model) => (
-                      <option key={`opt-${model.id}`} value={model.id}>
-                        {model.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </Group>
-
-            <Group title="Budget">
-              <div className="grid nums">
-                <NumberField label="Schritte" value={form.steps} min={1} max={6} disabled={running} onChange={(steps) => setForm({ ...form, steps })} />
-                <NumberField label="Training" value={form.trainBatch} min={1} max={6} disabled={running} onChange={(trainBatch) => setForm({ ...form, trainBatch })} />
-                <NumberField label="Gate" value={form.selectionRepeats} min={1} max={4} disabled={running} onChange={(selectionRepeats) => setForm({ ...form, selectionRepeats })} />
-                <NumberField label="Parallel" value={form.concurrency} min={1} max={6} disabled={running} onChange={(concurrency) => setForm({ ...form, concurrency })} />
-                <NumberField label="Lernrate" value={form.learningRate} min={1} max={6} disabled={running} onChange={(learningRate) => setForm({ ...form, learningRate })} />
-              </div>
-            </Group>
-
-            <Group title="Optionen">
-              <Toggle
-                label="Gate auf leerem Repository"
-                hint="Baseline und Gate laufen in einem leeren Repo mit nur dem Skill."
-                checked={form.gateOnEmptyRepo}
-                disabled={running}
-                onChange={(gateOnEmptyRepo) => setForm({ ...form, gateOnEmptyRepo })}
-              />
-              <Toggle
-                label="Slow-Update"
-                hint="Am Ende eine kurze dauerhafte Notiz, nur nach Gate."
-                checked={form.slowUpdate}
-                disabled={running}
-                onChange={(slowUpdate) => setForm({ ...form, slowUpdate })}
-              />
-            </Group>
+            <TrainerForm
+              form={form}
+              running={running}
+              models={models}
+              skillName={skillName}
+              onChange={setForm}
+              onChooseSkill={() => void chooseSkill()}
+              onChooseDestination={() => void chooseDestination()}
+              onChooseFolder={() => void chooseFolder()}
+            />
           </div>
-
           <div className="panel-foot">
             <p className="estimate">
-              <strong>{runCount}</strong> Läufe · <strong>{estimate.optimizer}</strong> Optimierer
+              Bis zu <strong>{estimate.total}</strong> Agent-Läufe · {estimate.attempts} Training/Gate · {estimate.optimizer} Optimierer
+              {estimate.checks ? ` · ${estimate.checks} Testskript` : ""}
             </p>
+            {form.runBudget !== null && estimate.total > (form.runBudget ?? 48) ? (
+              <p className="budget-error" role="status">Laufbudget überschritten. Budget erhöhen oder Schritte und Wiederholungen senken.</p>
+            ) : null}
             <div className="actions">
               <button type="submit" className={running ? "primary busy" : "primary"} disabled={running}>
                 {running ? <span className="spin" aria-hidden="true" /> : <PlayIcon />}
@@ -701,87 +575,6 @@ function Backdrop() {
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="group">
-      <h2 className="group-title">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Segmented<T extends string>({
-  legend,
-  hideLegend = false,
-  name,
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  legend: string;
-  hideLegend?: boolean;
-  name: string;
-  value: T;
-  options: { value: T; label: string }[];
-  disabled: boolean;
-  onChange: (value: T) => void;
-}) {
-  const index = Math.max(0, options.findIndex((option) => option.value === value));
-  return (
-    <fieldset className="segmented" disabled={disabled}>
-      <legend className={hideLegend ? "sr-only" : undefined}>{legend}</legend>
-      <div
-        className="seg"
-        style={{ "--seg-count": options.length, "--seg-index": index } as CSSProperties}
-      >
-        <span className="seg-thumb" aria-hidden="true" />
-        {options.map((option) => (
-          <label key={option.value}>
-            <input
-              type="radio"
-              name={name}
-              checked={option.value === value}
-              onChange={() => onChange(option.value)}
-            />
-            <span>{option.label}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-function Toggle({
-  label,
-  hint,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="toggle">
-      <span className="toggle-text">
-        {label}
-        <small>{hint}</small>
-      </span>
-      <input
-        type="checkbox"
-        role="switch"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-    </label>
-  );
-}
-
 function Empty({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <div className="empty enter">
@@ -795,7 +588,7 @@ function Empty({ icon, title, children }: { icon: ReactNode; title: string; chil
 function FindingCard({ step }: { step: StepRecord }) {
   const edits = [
     ...step.applied.map((edit) => `${edit.op}: ${edit.content || edit.target}`),
-    ...(step.appliedFiles ?? []).map((edit) => `${edit.path}: ${edit.content || edit.target || ""}`),
+    ...(step.appliedFiles ?? []).map((edit) => `${edit.op} ${edit.path}: ${edit.content || edit.target || ""}`),
   ];
   return (
     <article className={`card enter ${step.accepted ? "kept" : "dropped"}`}>
@@ -846,10 +639,10 @@ function Report({
           <SparkIcon />
           Bericht
         </strong>
-        <span className={improved ? "tag ok" : "tag"}>{resultTitle(summary, improved)}</span>
+        <span className={measuredImprovement(summary) ? "tag ok" : "tag"}>{resultTitle(summary)}</span>
       </header>
-      <MarkdownView text={reportBody(summary, improved)} />
-      <ScoreBar before={summary.baseline.gate} after={summary.best.gate} />
+      <MarkdownView text={reportBody(summary)} />
+      {summary.best.runs > 0 ? <ScoreBar before={summary.baseline.gate} after={summary.best.gate} /> : null}
       <h3>Änderungen</h3>
       {skillDiff ? (
         <pre>
@@ -864,7 +657,7 @@ function Report({
         </pre>
       ))}
       <h3>Optimierungen</h3>
-      {accepted.length === 0 ? <p className="quiet">Keine übernommene Optimierung.</p> : null}
+      {accepted.length === 0 ? <p className="quiet">Keine zusätzliche Optimierung durch das Gate übernommen.</p> : null}
       {accepted.map((step) => (
         <div key={`${step.kind}-${step.index}`} className="opt">
           <strong>{stepTitle(step)}</strong>
@@ -901,59 +694,6 @@ function LiveMark({ run }: { run: LiveRun }) {
   if (run.trajectory && run.trajectory.score.hard < 1) return <span className="dot bad" aria-hidden="true" />;
   if (run.trajectory) return <span className="dot" aria-hidden="true" />;
   return <span className="dot idle" aria-hidden="true" />;
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  disabled: boolean;
-  onChange: (value: number) => void;
-}) {
-  const id = useId();
-  return (
-    <div className="num">
-      <label htmlFor={id}>{label}</label>
-      <div className="stepper">
-        <button
-          type="button"
-          aria-label={`${label} verringern`}
-          disabled={disabled || value <= min}
-          onClick={() => onChange(Math.max(min, value - 1))}
-        >
-          −
-        </button>
-        <input
-          id={id}
-          type="number"
-          min={min}
-          max={max}
-          value={value}
-          disabled={disabled}
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            if (Number.isFinite(next)) onChange(next);
-          }}
-        />
-        <button
-          type="button"
-          aria-label={`${label} erhöhen`}
-          disabled={disabled || value >= max}
-          onClick={() => onChange(Math.min(max, value + 1))}
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function isLive(run: LiveRun): boolean {
@@ -1035,11 +775,6 @@ function skillLabel(preview: { name: string; fileCount: number }): string {
   return `${preview.name} · ${preview.fileCount} ${preview.fileCount === 1 ? "Datei" : "Dateien"}`;
 }
 
-function modelChoices(models: ModelOption[], selected: string): ModelOption[] {
-  if (!selected || models.some((model) => model.id === selected)) return models;
-  return [{ id: selected, label: selected }, ...models];
-}
-
 function fileChanges(summary: SessionSummary): { path: string; diff: string }[] {
   const left = summary.originalFiles ?? [];
   const right = summary.bestFiles ?? [];
@@ -1054,27 +789,21 @@ function fileChanges(summary: SessionSummary): { path: string; diff: string }[] 
       changes.push({ path, diff: "Binärdatei geändert." });
       continue;
     }
-    changes.push({ path, diff: changedLines(before?.text ?? "", after?.text ?? "") || "geändert" });
+    const mode = Boolean(before?.executable) !== Boolean(after?.executable)
+      ? `\nAusführbar: ${after?.executable ? "ja" : "nein"}`
+      : "";
+    changes.push({ path, diff: `${changedLines(before?.text ?? "", after?.text ?? "") || "geändert"}${mode}` });
   }
   return changes;
 }
 
 function sameFile(left: SkillFile | undefined, right: SkillFile | undefined): boolean {
-  return (left?.text ?? "") === (right?.text ?? "") && (left?.base64 ?? "") === (right?.base64 ?? "");
-}
-
-function reportBody(summary: SessionSummary, improved: boolean): string {
-  const lines = [
-    resultTitle(summary, improved),
-    "",
-    `Start **${pct(summary.baseline.gate)}** (${summary.baseline.passes}/${summary.baseline.runs} grün). Beste Fassung **${pct(summary.best.gate)}** (${summary.best.passes}/${summary.best.runs} grün).`,
-  ];
-  if (summary.error) lines.push("", summary.error);
-  if (summary.cancelled) lines.push("", "Abgebrochen.");
-  return lines.join("\n");
+  return (left?.text ?? "") === (right?.text ?? "") && (left?.base64 ?? "") === (right?.base64 ?? "") && Boolean(left?.executable) === Boolean(right?.executable);
 }
 
 function phaseLabel(phase: string): string {
+  if (phase === "create") return "Skill erstellen";
+  if (phase === "pretrain") return "Vortraining";
   if (phase === "checks") return "Testskript";
   if (phase === "preflight") return "Vorprüfung";
   if (phase === "baseline") return "Baseline";
@@ -1105,23 +834,6 @@ function authLabel(auth: AuthStatus | null): string {
   if (auth.state === "logged-in") return auth.email ?? "angemeldet";
   if (auth.state === "error") return "Fehler";
   return "abgemeldet";
-}
-
-function bundleChanged(summary: SessionSummary): boolean {
-  if (summary.bestSkill.trim() !== summary.originalSkill.trim()) return true;
-  const left = summary.originalFiles ?? [];
-  const right = summary.bestFiles ?? [];
-  if (left.length !== right.length) return true;
-  return right.some((file) => {
-    const other = left.find((item) => item.path === file.path);
-    return !other || other.text !== file.text || other.base64 !== file.base64;
-  });
-}
-
-function resultTitle(summary: SessionSummary, improved: boolean): string {
-  if (summary.error && !improved) return "Abgebrochen, Skill unverändert";
-  if (improved) return "Bessere Fassung";
-  return "Keine Verbesserung";
 }
 
 function pct(value: number): string {

@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import { efficiencySoft, gateScore } from "../shared/score";
 import type { ActivityUpdate } from "../shared/run-log";
 import type { RunScore, SkillFile, Trajectory } from "../shared/types";
@@ -130,12 +131,30 @@ export async function placeSkill(
   const primary = inside ? path.join(dest, relativeRoot) : path.join(dest, ".cursor", "skills", slug);
   const mirror = path.join(dest, ".cursor", "skills", slug);
   for (const root of new Set([primary, mirror])) {
+    await assertSkillDestination(dest, root);
+    await fs.rm(root, { recursive: true, force: true });
     await writeSkillTree(root, files);
   }
   return {
     dir: path.relative(dest, primary),
     file: path.relative(dest, path.join(primary, "SKILL.md")),
   };
+}
+
+async function assertSkillDestination(workspace: string, destination: string): Promise<void> {
+  const relative = path.relative(workspace, destination);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("Der Skill muss innerhalb der Laufkopie liegen.");
+  }
+  let current = workspace;
+  for (const part of relative.split(path.sep)) {
+    current = path.join(current, part);
+    const stat = await fs.lstat(current).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (stat?.isSymbolicLink()) throw new Error("Der Skill-Pfad in der Laufkopie darf keine symbolischen Links enthalten.");
+  }
 }
 
 function scoreRun(

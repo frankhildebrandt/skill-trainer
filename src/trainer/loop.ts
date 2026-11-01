@@ -2,6 +2,7 @@ import { learningRateAt } from "../shared/estimate";
 import { aggregate, isImprovement } from "../shared/score";
 import type {
   AggregateScore,
+  OptimizerBudget,
   Rejection,
   SessionSummary,
   SkillFile,
@@ -9,8 +10,8 @@ import type {
   TrainerEvent,
   Trajectory,
 } from "../shared/types";
-import { applyEdits, setSlowRegion } from "./edits";
-import { applyFileEdits, withDocument } from "./skill-bundle";
+import { applyProposal } from "./candidate";
+import { withDocument } from "./skill-bundle";
 import type { Proposal } from "./json";
 import { isAbortError, mapPool, throwIfAborted } from "./pool";
 import { buildTasks, type TaskSpec } from "./tasks";
@@ -28,7 +29,9 @@ export interface AttemptCall {
 
 export interface ProposeCall {
   skill: string;
-  kind: "step" | "slow";
+  kind: "step" | "slow" | "create" | "pretrain";
+  budget?: OptimizerBudget;
+  skillBrief?: string;
   learningRate: number;
   train: Trajectory[];
   rejected: Rejection[];
@@ -46,6 +49,7 @@ export interface TrainerDeps {
 }
 
 export interface TrainLoopConfig {
+  budget?: OptimizerBudget;
   skill: string;
   auftrag: string;
   extraTasks: string[];
@@ -143,6 +147,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         skill: current,
         kind: "step",
         learningRate: rate,
+        budget: config.budget,
         train: trainRuns,
         rejected,
         files: currentFiles,
@@ -151,20 +156,15 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         auftrag: config.auftrag,
         signal: config.signal,
       });
-      const report = applyEdits(current, proposal.edits, { limit: rate });
-      const fileReport = applyFileEdits(
-        withDocument(currentFiles, report.skill),
-        proposal.files ?? [],
-        4,
-      );
-      if (report.applied.length === 0 && fileReport.applied.length === 0) {
+      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: rate, budget: config.budget });
+      if (report.applied.length === 0 && report.appliedFiles.length === 0) {
         const skipped: StepRecord = {
           index: step + 1,
           kind: "step",
           reasoning: proposal.reasoning || "Keine anwendbare Änderung.",
           applied: [],
           appliedFiles: [],
-          skipped: [...report.skipped, ...fileReport.skipped],
+          skipped: report.skipped,
           selectionBefore: currentScore,
           selectionAfter: null,
           accepted: false,
@@ -184,12 +184,12 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
           : `Schritt ${label}: Gate mit ${tasks.selection.length} frischen Läufen.`,
       });
       const before = currentScore;
-      const selectionRuns = await batch(config, deps, tasks.selection, "gate", report.skill, fileReport.files);
+      const selectionRuns = await batch(config, deps, tasks.selection, "gate", report.skill, report.files);
       const after = aggregate(selectionRuns.map((run) => run.score));
       const accepted = isImprovement(after.gate, before.gate);
       if (accepted) {
         current = report.skill;
-        currentFiles = fileReport.files;
+        currentFiles = report.files;
         currentScore = after;
         bestSkill = current;
         bestFiles = currentFiles;
@@ -201,7 +201,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
       } else {
         rejected.push({
           edits: report.applied,
-          fileEdits: fileReport.applied,
+          fileEdits: report.appliedFiles,
           before,
           after,
           reasoning: proposal.reasoning,
@@ -217,8 +217,8 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         kind: "step",
         reasoning: proposal.reasoning,
         applied: report.applied,
-        appliedFiles: fileReport.applied,
-        skipped: [...report.skipped, ...fileReport.skipped],
+        appliedFiles: report.appliedFiles,
+        skipped: report.skipped,
         selectionBefore: before,
         selectionAfter: after,
         accepted,
@@ -235,6 +235,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         skill: current,
         kind: "slow",
         learningRate: 1,
+        budget: config.budget,
         train: lastTrain,
         rejected,
         files: currentFiles,
@@ -243,21 +244,15 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         auftrag: config.auftrag,
         signal: config.signal,
       });
-      let candidate = proposal.slow ? setSlowRegion(current, proposal.slow) : current;
-      const report = applyEdits(candidate, proposal.edits, { limit: 1 });
-      candidate = report.skill;
-      const fileReport = applyFileEdits(
-        withDocument(currentFiles, candidate),
-        proposal.files ?? [],
-        4,
-      );
-      if (candidate === current && fileReport.applied.length === 0) {
+      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: 1, budget: config.budget, slow: true });
+      const candidate = report.skill;
+      if (candidate === current && report.appliedFiles.length === 0) {
         const skipped: StepRecord = {
           index: config.steps + 1,
           kind: "slow",
           reasoning: proposal.reasoning || "Slow-Update leer.",
           applied: [],
-          skipped: [...report.skipped, ...fileReport.skipped],
+          skipped: report.skipped,
           selectionBefore: currentScore,
           selectionAfter: null,
           accepted: false,
@@ -267,7 +262,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         deps.emit({ type: "step", step: skipped });
       } else {
         const before = currentScore;
-        const selectionRuns = await batch(config, deps, tasks.selection, "slow", candidate, fileReport.files);
+        const selectionRuns = await batch(config, deps, tasks.selection, "slow", candidate, report.files);
         const after = aggregate(selectionRuns.map((run) => run.score));
         const accepted = isImprovement(after.gate, before.gate);
         const tried = proposal.slow
@@ -275,7 +270,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
           : report.applied;
         if (accepted) {
           current = candidate;
-          currentFiles = fileReport.files;
+          currentFiles = report.files;
           currentScore = after;
           bestSkill = current;
           bestFiles = currentFiles;
@@ -283,7 +278,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         } else {
           rejected.push({
             edits: tried,
-            fileEdits: fileReport.applied,
+            fileEdits: report.appliedFiles,
             before,
             after,
             reasoning: proposal.reasoning,
@@ -295,8 +290,8 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
           kind: "slow",
           reasoning: proposal.reasoning,
           applied: tried,
-          appliedFiles: fileReport.applied,
-          skipped: [...report.skipped, ...fileReport.skipped],
+          appliedFiles: report.appliedFiles,
+          skipped: report.skipped,
           selectionBefore: before,
           selectionAfter: after,
           accepted,

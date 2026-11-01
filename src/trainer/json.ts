@@ -47,12 +47,13 @@ function parseEdit(value: unknown): SkillEdit[] {
 function parseFileEdit(value: unknown): FileEdit[] {
   if (!value || typeof value !== "object") return [];
   const record = value as Record<string, unknown>;
-  const op = record.op === "write" || record.op === "replace" ? record.op : null;
+  const op = record.op === "write" || record.op === "replace" || record.op === "delete" ? record.op : null;
   if (!op || typeof record.path !== "string") return [];
   const relative = sanitizeRelative(record.path);
   if (!relative) return [];
   const content = typeof record.content === "string" ? record.content : "";
   const target = typeof record.target === "string" ? record.target : undefined;
   const why = typeof record.why === "string" ? record.why : undefined;
-  return [{ op, path: relative, content, target, why }];
+  const executable = typeof record.executable === "boolean" ? record.executable : undefined;
+  return [{ op, path: relative, content, target, why, ...(executable === undefined ? {} : { executable }) }];
 }

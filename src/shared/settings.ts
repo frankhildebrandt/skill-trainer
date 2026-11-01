@@ -1,4 +1,5 @@
 import type { TrainRequest } from "./types";
+import { restoreBudget } from "./budget";
 
 const DEFAULTS: TrainRequest = {
   skillPath: "",
@@ -33,6 +34,12 @@ export function restoreSettings(raw: unknown): TrainRequest | null {
       : DEFAULTS.extraTasks;
 
   return {
+    workflow: record.workflow === "create" || record.workflow === "pretrain" ? record.workflow : "train",
+    skillName: text(record.skillName, ""),
+    skillBrief: text(record.skillBrief, ""),
+    trainAfterDraft: record.trainAfterDraft !== false,
+    budget: restoreBudget(record.budget),
+    runBudget: record.runBudget === null ? null : numberOr(record.runBudget, 48),
     skillPath: text(record.skillPath, ""),
     workspacePath: text(record.workspacePath, ""),
     auftrag: text(record.auftrag, ""),
