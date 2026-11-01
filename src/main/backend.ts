@@ -206,7 +206,7 @@ function sessionProposer(
   let counter = 0;
   return async (input) => {
     const runId = `optimizer-${++counter}`;
-    const title = input.kind === "create" ? "Skill erstellen" : input.kind === "pretrain" ? "Vortraining" : "Optimierer";
+    const title = input.kind === "create" ? "Skill erstellen" : input.kind === "pretrain" ? "Vortraining" : input.kind === "slow" ? "Optimierer Slow" : `Optimierer ${counter}`;
     emit({ type: "log", message: `${title}: Skill-Ordner mit ${config.budget.unlimited ? "unbegrenztem" : "konfiguriertem"} Edit-Budget überarbeiten.` });
     emit({ type: "run_activity", runId, title });
     const cwd = path.join(sessionDir, "optimizer", runId);
@@ -327,6 +327,7 @@ async function runPrepared(
       slowUpdate: config.slowUpdate,
       gateOnEmptyRepo: config.gateOnEmptyRepo,
       skillScope: config.skillScope,
+      skillBrief: config.skillBrief,
       files: bundle.files,
       skillRoot: bundle.root,
       signal: controller.signal,

@@ -62,6 +62,7 @@ export interface TrainLoopConfig {
   slowUpdate: boolean;
   gateOnEmptyRepo: boolean;
   skillScope?: "general" | "specific";
+  skillBrief?: string;
   files?: SkillFile[];
   skillRoot?: string;
   signal: AbortSignal;
@@ -136,7 +137,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
       deps.emit({
         type: "log",
         message: config.gateOnEmptyRepo
-          ? `Schritt ${label}: ${tasks.train.length} Trainingsläufe im leeren Repository, ohne den Projektcode.`
+          ? `Schritt ${label}: ${tasks.train.length} Trainingsläufe im Projekt. Das Gate prüft danach auf einem leeren Repository.`
           : `Schritt ${label}: ${tasks.train.length} Trainingsläufe parallel.`,
       });
       const trainRuns = await batch(config, deps, tasks.train, "train", current, currentFiles);
@@ -153,6 +154,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         files: currentFiles,
         emptyGate: config.gateOnEmptyRepo,
         skillScope: config.skillScope ?? "general",
+        skillBrief: config.skillBrief,
         auftrag: config.auftrag,
         signal: config.signal,
       });
@@ -241,6 +243,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         files: currentFiles,
         emptyGate: config.gateOnEmptyRepo,
         skillScope: config.skillScope ?? "general",
+        skillBrief: config.skillBrief,
         auftrag: config.auftrag,
         signal: config.signal,
       });
@@ -335,7 +338,7 @@ async function batch(
     return await mapPool(tasks, config.concurrency, (task) =>
       deps.runAttempt({
         phase,
-        ground: config.gateOnEmptyRepo ? "empty" : "repo",
+        ground: phase === "train" || !config.gateOnEmptyRepo ? "repo" : "empty",
         skill,
         files: withDocument(files, skill),
         skillRoot: config.skillRoot ?? "",

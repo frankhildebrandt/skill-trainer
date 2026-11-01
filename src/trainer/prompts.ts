@@ -135,7 +135,7 @@ ${input.auftrag}
 ${
   input.emptyGate
     ? `
-Every rollout below ran in a fresh empty repository. The agent could not read the original project. Put the scaffold, commands, reference notes, and scripts into the skill folder so the next agent succeeds from that folder alone. Do not mention files that exist only in the user's project.
+Training rollouts below ran inside the project. Baseline and gate run in a fresh empty repository that contains only this skill, and those agents cannot read the original project. Write the scaffold, commands, reference notes, and scripts the skill folder must carry so the empty repository succeeds. Do not tell the agent to open files that exist only in the training project.
 `
     : ""
 }

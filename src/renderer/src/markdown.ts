@@ -12,6 +12,24 @@ export type Block =
   | { type: "ol"; items: Inline[][] }
   | { type: "table"; header: Inline[][]; rows: Inline[][][] };
 
+export function proposalJson(text: string): { before: string; pretty: string; after: string } | null {
+  const trimmed = text.trim();
+  if (!trimmed.includes("{") || !trimmed.includes("}")) return null;
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (end <= start) return null;
+  const before = trimmed.slice(0, start).trim();
+  const after = trimmed.slice(end + 1).trim();
+  if (before.length > 280) return null;
+  try {
+    const value = JSON.parse(trimmed.slice(start, end + 1));
+    if (!value || typeof value !== "object") return null;
+    return { before, pretty: JSON.stringify(value, null, 2), after };
+  } catch {
+    return null;
+  }
+}
+
 export function parseMarkdown(source: string): Block[] {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const blocks: Block[] = [];

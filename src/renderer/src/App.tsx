@@ -23,6 +23,7 @@ import {
   TerminalIcon,
 } from "./icons";
 import { MarkdownView } from "./MarkdownView";
+import { proposalJson } from "./markdown";
 import { TrainerForm } from "./TrainerForm";
 import { bundleChanged, measuredImprovement, reportBody, resultTitle } from "./report";
 import { ResizeHandle, usePaneSizes } from "./ResizeHandle";
@@ -754,7 +755,22 @@ function BlockView({ block }: { block: RunBlock }) {
       </div>
     );
   }
-  if (block.kind === "text") return <MarkdownView text={block.text} />;
+  if (block.kind === "text") {
+    const proposal = proposalJson(block.text);
+    if (proposal) {
+      return (
+        <>
+          {proposal.before ? <MarkdownView text={proposal.before} /> : null}
+          <pre className="proposal">
+            <code>{proposal.pretty}</code>
+          </pre>
+          {proposal.after ? <MarkdownView text={proposal.after} /> : null}
+        </>
+      );
+    }
+    if (block.text.trim().startsWith("{")) return <pre className="proposal draft"><code>{block.text}</code></pre>;
+    return <MarkdownView text={block.text} />;
+  }
   if (block.kind === "tool") {
     const state = block.status === "running" ? "läuft" : block.status === "error" ? "Fehler" : "fertig";
     return (

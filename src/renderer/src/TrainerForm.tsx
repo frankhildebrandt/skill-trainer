@@ -160,6 +160,18 @@ export function TrainerForm({
           <input type="radio" name="skillScope" checked={form.skillScope === "specific"} onChange={() => onChange({ ...form, skillScope: "specific" })} />
           {fineTune ? "Dieser Auftrag" : "Dieser Zweck"}
         </label>
+        {workflow === "train" ? (
+          <label>
+            In eigenen Worten
+            <textarea
+              value={form.skillBrief ?? ""}
+              disabled={running}
+              rows={3}
+              placeholder="Worauf der Skill hinaus soll"
+              onChange={(event) => onChange({ ...form, skillBrief: event.target.value })}
+            />
+          </label>
+        ) : null}
       </fieldset>
       <div className="grid">
         {fineTune ? <ModelField label="Zielmodell" models={models} value={form.targetModel} disabled={running} onChange={(targetModel) => onChange({ ...form, targetModel })} /> : null}

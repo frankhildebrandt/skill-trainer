@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInline, parseMarkdown } from "./markdown";
+import { parseInline, parseMarkdown, proposalJson } from "./markdown";
 
 describe("parseMarkdown", () => {
   it("reads headings, lists, and fenced code", () => {
@@ -32,6 +32,12 @@ describe("parseMarkdown", () => {
     expect(table.rows[0]?.[0]).toEqual([{ type: "text", text: "run.sh" }]);
     expect(table.rows[5]?.[0]).toEqual([{ type: "text", text: "stubs/" }]);
     expect(table.rows[5]?.[1]?.[0]).toMatchObject({ text: "Minimal generated-catalog stubs when modules_gen.go etc. are absent" });
+  });
+
+  it("pretty-prints an optimizer JSON object", () => {
+    const parsed = proposalJson('{"reasoning":"knapp","edits":[],"files":[],"slow":""}');
+    expect(parsed?.pretty).toContain('\n  "reasoning": "knapp"');
+    expect(proposalJson("Der Agent sucht weiter und schreibt keinen Vorschlag.")).toBeNull();
   });
 
   it("marks strong, emphasis, and code inside a paragraph", () => {

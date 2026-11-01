@@ -60,7 +60,7 @@ describe("trainSkill", () => {
     expect(summary.best.gate).toBeGreaterThan(summary.baseline.gate);
   });
 
-  it("keeps every run off the original project when the empty gate is on", async () => {
+  it("trains in the project and scores baseline and gate on an empty repository", async () => {
     const grounds: string[] = [];
     let sawEmptyGate = false;
     const summary = await trainSkill(baseConfig({ slowUpdate: false, steps: 1, gateOnEmptyRepo: true }), {
@@ -81,7 +81,7 @@ describe("trainSkill", () => {
     });
 
     expect(sawEmptyGate).toBe(true);
-    expect(grounds).toEqual(["baseline:empty", "baseline:empty", "train:empty", "gate:empty", "gate:empty"]);
+    expect(grounds).toEqual(["baseline:empty", "baseline:empty", "train:repo", "gate:empty", "gate:empty"]);
     expect(summary.bestSkill).toContain(MAGIC);
     expect(summary.baseline.passes).toBe(0);
     expect(summary.best.passes).toBe(2);

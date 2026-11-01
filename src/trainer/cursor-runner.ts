@@ -75,21 +75,8 @@ export async function proposeWithCursor(
   input: ProposeCall & { model: string; cwd: string; onActivity?: (update: ActivityUpdate) => void },
 ): Promise<Proposal> {
   const prompt = buildOptimizerPrompt(input);
-  const first = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity);
-  try {
-    return parseProposal(extractJson(first));
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    input.onActivity?.({ op: "note", text: "Der erste Vorschlag war kein gültiges JSON. Neuer Versuch." });
-    const second = await completeText(
-      input.model,
-      input.cwd,
-      `${prompt}\n\nYour previous reply was not valid JSON (${reason}). Reply with one JSON object only.`,
-      input.signal,
-      input.onActivity,
-    );
-    return parseProposal(extractJson(second));
-  }
+  const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity);
+  return parseProposal(extractJson(text));
 }
 
 export async function makeOptimizerDir(sessionDir: string): Promise<string> {
@@ -138,9 +125,10 @@ async function completeTextOnce(
     local: { cwd: dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
   });
   try {
+    onActivity?.({ op: "note", text: "Durchlauf 1 von 2" });
     const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity);
     if (isProposal(first)) return first;
-    onActivity?.({ op: "note", text: "Die Antwort war kein JSON. Kurzer zweiter Versuch, ohne neue Runde." });
+    onActivity?.({ op: "note", text: "Durchlauf 2 von 2. Die erste Antwort war kein JSON." });
     return await sendOnce(
       agent,
       "Your previous reply was not one JSON object. Reply with that JSON object only. Do not restate the analysis.",
