@@ -17,8 +17,10 @@ import {
   BrainIcon,
   BrandMark,
   CheckIcon,
+  CloseIcon,
   ExternalIcon,
   PlayIcon,
+  PlusIcon,
   PulseIcon,
   SparkIcon,
   StopIcon,
@@ -52,6 +54,25 @@ type FeedItem =
   | { id: number; type: "finding"; index: number }
   | { id: number; type: "report" };
 
+interface TabSnapshot {
+  id: string;
+  label: string;
+  status: string;
+  tone: "idle" | "live" | "good" | "bad";
+  running: boolean;
+  form: TrainRequest;
+}
+
+interface TrainingTab {
+  id: string;
+  ordinal: number;
+  initialForm: TrainRequest;
+}
+
+function newTrainingTab(ordinal: number, form: TrainRequest): TrainingTab {
+  return { id: crypto.randomUUID(), ordinal, initialForm: structuredClone(form) };
+}
+
 const EMPTY: TrainRequest = {
   workflow: "train",
   skillName: "",
@@ -82,8 +103,197 @@ export function App() {
   const api = window.trainer;
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [models, setModels] = useState<ModelOption[]>([{ id: "composer-2.5", label: "Composer 2.5" }]);
-  const [form, setForm] = useState<TrainRequest>(EMPTY);
-  const [settingsReady, setSettingsReady] = useState(false);
+  const [tabs, setTabs] = useState<TrainingTab[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<Record<string, TabSnapshot>>({});
+  const ordinals = useRef(0);
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    void api.authStatus().then((status) => {
+      if (!cancelled) setAuth(status);
+    }).catch(() => undefined);
+    void api.listModels().then((result) => {
+      if (!cancelled && result.models.length > 0) setModels(result.models);
+    });
+    void api.loadSettings().then((saved) => {
+      if (cancelled) return;
+      const tab = newTrainingTab(++ordinals.current, saved ?? EMPTY);
+      setTabs([tab]);
+      setActiveId(tab.id);
+    }).catch(() => {
+      if (cancelled) return;
+      const tab = newTrainingTab(++ordinals.current, EMPTY);
+      setTabs([tab]);
+      setActiveId(tab.id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  if (!api) {
+    return <main className="fallback">Skill Trainer läuft nur in der Electron-App.</main>;
+  }
+
+  const runningCount = Object.values(snapshots).filter((snapshot) => snapshot.running).length;
+  const loggedIn = auth?.state === "logged-in";
+
+  function rememberSnapshot(snapshot: TabSnapshot) {
+    setSnapshots((prev) => {
+      const current = prev[snapshot.id];
+      if (
+        current
+        && current.label === snapshot.label
+        && current.status === snapshot.status
+        && current.tone === snapshot.tone
+        && current.running === snapshot.running
+        && current.form === snapshot.form
+      ) return prev;
+      return { ...prev, [snapshot.id]: snapshot };
+    });
+  }
+
+  function addTab() {
+    const source = (activeId && snapshots[activeId]?.form) || tabs.find((tab) => tab.id === activeId)?.initialForm || EMPTY;
+    const tab = newTrainingTab(++ordinals.current, source);
+    setTabs((prev) => [...prev, tab]);
+    setActiveId(tab.id);
+  }
+
+  function closeTab(id: string) {
+    if (snapshots[id]?.running) void api.cancel(id);
+    setSnapshots((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setTabs((prev) => {
+      const index = prev.findIndex((tab) => tab.id === id);
+      const remaining = prev.filter((tab) => tab.id !== id);
+      if (remaining.length === 0) {
+        const form = snapshots[id]?.form ?? prev[index]?.initialForm ?? EMPTY;
+        const tab = newTrainingTab(++ordinals.current, form);
+        setActiveId(tab.id);
+        return [tab];
+      }
+      if (activeId === id) {
+        const neighbor = remaining[Math.max(0, index - 1)] ?? remaining[0];
+        setActiveId(neighbor?.id ?? null);
+      }
+      return remaining;
+    });
+  }
+
+  async function login() {
+    setAuth({ state: "logged-out", email: null, via: "none", message: "Browser ist offen …" });
+    try {
+      const next = await api.authLogin();
+      setAuth(next);
+      const listed = await api.listModels();
+      if (listed.models.length > 0) setModels(listed.models);
+    } catch (err) {
+      setAuth({ state: "error", email: null, via: "none", message: messageOf(err) });
+    }
+  }
+
+  return (
+    <div className={runningCount > 0 ? "app is-running" : "app"}>
+      <Backdrop />
+      <header className="titlebar">
+        <div className="brand">
+          <BrandMark />
+          <h1>Skill Trainer</h1>
+        </div>
+        <div className="status" aria-live="polite">
+          {runningCount > 0 ? (
+            <span className="status-pill live">
+              <span className="pulse" aria-hidden="true" />
+              <span className="status-pill-num">{runningCount}</span>
+              {runningCount === 1 ? "Training läuft" : "Trainings laufen"}
+            </span>
+          ) : null}
+        </div>
+        <div className="auth">
+          <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={authLabel(auth)}>
+            <span className="pill-dot" aria-hidden="true" />
+            {authLabel(auth)}
+          </span>
+          <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0}>
+            Anmelden
+          </button>
+        </div>
+        {runningCount > 0 ? <div className="beam" aria-hidden="true" /> : null}
+      </header>
+      <div className="global-tabs" role="tablist" aria-label="Trainings">
+        {tabs.map((tab) => {
+          const snapshot = snapshots[tab.id];
+          const selected = tab.id === activeId;
+          const tone = snapshot?.tone ?? "idle";
+          const label = snapshot?.label ?? `Training ${tab.ordinal}`;
+          const status = snapshot?.status ?? "bereit";
+          return (
+            <div key={tab.id} className={`global-tab ${tone}${selected ? " on" : ""}`}>
+              <button
+                type="button"
+                className="global-tab-main"
+                role="tab"
+                aria-selected={selected}
+                title={`${label} · ${status}`}
+                onClick={() => setActiveId(tab.id)}
+              >
+                <span className="global-tab-mark" aria-hidden="true" />
+                <span className="global-tab-copy">
+                  <span className="global-tab-label">{label}</span>
+                  <span className="global-tab-status">{status}</span>
+                </span>
+              </button>
+              <button type="button" className="global-tab-x" aria-label={`${label} schließen`} title="Schließen" onClick={() => closeTab(tab.id)}>
+                <CloseIcon />
+              </button>
+            </div>
+          );
+        })}
+        <div className="global-tabs-end">
+          <button type="button" className="global-tab-add" onClick={addTab} aria-label="+ Training" title="Training hinzufügen">
+            <PlusIcon />
+            <span className="global-tab-add-label">Training</span>
+          </button>
+        </div>
+      </div>
+      {tabs.map((tab) => (
+        <TrainingSession
+          key={tab.id}
+          sessionId={tab.id}
+          ordinal={tab.ordinal}
+          initialForm={tab.initialForm}
+          active={tab.id === activeId}
+          models={models}
+          onSnapshot={rememberSnapshot}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TrainingSession({
+  sessionId,
+  ordinal,
+  initialForm,
+  active,
+  models,
+  onSnapshot,
+}: {
+  sessionId: string;
+  ordinal: number;
+  initialForm: TrainRequest;
+  active: boolean;
+  models: ModelOption[];
+  onSnapshot: (snapshot: TabSnapshot) => void;
+}) {
+  const api = window.trainer;
+  const [form, setForm] = useState<TrainRequest>(initialForm);
   const [skillName, setSkillName] = useState<string | null>(null);
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
   const [skillsNote, setSkillsNote] = useState<string | null>(null);
@@ -95,12 +305,13 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [tabs, setTabs] = useState<string[]>([]);
-  const [active, setActive] = useState<string | null>(null);
+  const [openRun, setOpenRun] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const seq = useRef(0);
   const seenAgents = useRef(new Set<string>());
   const feedStick = useRef(true);
   const agentStick = useRef(true);
+  const starting = useRef(false);
   const layoutRef = useRef<HTMLDivElement>(null);
   const panes = usePaneSizes(layoutRef);
 
@@ -116,30 +327,15 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!api) return;
-    let cancelled = false;
-    void api.loadSettings().then(async (saved) => {
-      if (cancelled) return;
-      if (saved) setForm(saved);
-      if (!cancelled) setSettingsReady(true);
-    }).catch(() => {
-      if (!cancelled) setSettingsReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
-
-  useEffect(() => {
-    if (!api || !settingsReady) return;
+    if (!api || !active) return;
     const timer = setTimeout(() => {
       void api.saveSettings(form);
     }, 250);
     return () => clearTimeout(timer);
-  }, [api, form, settingsReady]);
+  }, [api, form, active]);
 
   useEffect(() => {
-    if (!api || !settingsReady) return;
+    if (!api) return;
     const skillPath = form.skillPath.trim();
     if (!skillPath || form.workflow === "create") {
       setSkillName(null);
@@ -154,10 +350,10 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [api, settingsReady, form.skillPath, form.workflow]);
+  }, [api, form.skillPath, form.workflow]);
 
   useEffect(() => {
-    if (!api || !settingsReady) return;
+    if (!api) return;
     const workspace = form.workspacePath.trim();
     if (!workspace) {
       setProjectSkills([]);
@@ -181,15 +377,12 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [api, settingsReady, form.workspacePath]);
+  }, [api, form.workspacePath]);
 
   useEffect(() => {
     if (!api) return;
-    void api.authStatus().then(setAuth).catch((err: unknown) => pushFeed({ type: "note", text: messageOf(err) }));
-    void api.listModels().then((result) => {
-      if (result.models.length > 0) setModels(result.models);
-    });
     return api.onEvent((event) => {
+      if (event.sessionId !== sessionId) return;
       if (event.type === "log") pushFeed({ type: "note", text: event.message });
       if (event.type === "phase") setPhase(phaseLabel(event.phase));
       if (event.type === "run_started") {
@@ -257,7 +450,7 @@ export function App() {
         pushFeed({ type: "report" });
       }
     });
-  }, [api]);
+  }, [api, sessionId]);
 
   const anyLive = runs.some((run) => isLive(run));
   useEffect(() => {
@@ -265,6 +458,22 @@ export function App() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [anyLive]);
+
+  const tabLabelText = trainingLabel(form, ordinal, skillName);
+  const liveCount = runs.filter((run) => isLive(run)).length;
+  const tabState = trainingStatus(running, phase, summary, liveCount);
+  const snapshotRef = useRef(onSnapshot);
+  snapshotRef.current = onSnapshot;
+  useEffect(() => {
+    snapshotRef.current({
+      id: sessionId,
+      label: tabLabelText,
+      status: tabState.status,
+      tone: tabState.tone,
+      running,
+      form,
+    });
+  }, [sessionId, tabLabelText, tabState.status, tabState.tone, running, form]);
 
   const hasDraft = form.workflow === "create" || form.workflow === "pretrain";
   const fineTune = !hasDraft || form.trainAfterDraft !== false;
@@ -275,21 +484,7 @@ export function App() {
     return { attempts: train.attempts, checks, optimizer, total: train.attempts + checks + optimizer };
   }, [fineTune, hasDraft, form.steps, form.trainBatch, form.selectionRepeats, form.slowUpdate, form.verifyMode]);
 
-  if (!api) {
-    return <main className="fallback">Skill Trainer läuft nur in der Electron-App.</main>;
-  }
-
-  async function login() {
-    setAuth({ state: "logged-out", email: null, via: "none", message: "Browser ist offen …" });
-    try {
-      const next = await api.authLogin();
-      setAuth(next);
-      const listed = await api.listModels();
-      if (listed.models.length > 0) setModels(listed.models);
-    } catch (err) {
-      pushFeed({ type: "note", text: messageOf(err) });
-    }
-  }
+  if (!api) return null;
 
   async function chooseSkill() {
     const picked = await api.pickSkill();
@@ -334,6 +529,8 @@ export function App() {
   }
 
   async function start() {
+    if (starting.current) return;
+    starting.current = true;
     setRunning(true);
     setNotice(null);
     setSummary(null);
@@ -341,15 +538,17 @@ export function App() {
     setRuns([]);
     setFeed([]);
     setTabs([]);
-    setActive(null);
+    setOpenRun(null);
     seq.current = 0;
     seenAgents.current = new Set();
     setPhase("startet");
     try {
-      await api.start(form);
+      await api.start(form, sessionId);
     } catch (err) {
       pushFeed({ type: "note", text: messageOf(err) });
+      setPhase("bereit");
     } finally {
+      starting.current = false;
       setRunning(false);
     }
   }
@@ -357,7 +556,7 @@ export function App() {
   async function writeBack() {
     setNotice(null);
     try {
-      const result = await api.writeBack();
+      const result = await api.writeBack(sessionId);
       setNotice(`Übernommen nach ${result.skillPath}.${result.backupPath ? ` Backup: ${result.backupPath}` : ""}`);
     } catch (err) {
       setNotice(messageOf(err));
@@ -366,56 +565,24 @@ export function App() {
 
   function openAgent(runId: string) {
     setTabs((prev) => (prev.includes(runId) ? prev : [...prev, runId]));
-    setActive(runId);
+    setOpenRun(runId);
     agentStick.current = true;
   }
 
   function closeTab(runId: string) {
     const next = tabs.filter((tab) => tab !== runId);
     setTabs(next);
-    if (active === runId) {
+    if (openRun === runId) {
       const index = Math.max(0, tabs.indexOf(runId) - 1);
-      setActive(next[index] ?? null);
+      setOpenRun(next[index] ?? null);
     }
   }
 
   const improved = summary ? bundleChanged(summary) : false;
-  const activeRun = runs.find((run) => run.runId === active);
-  const liveCount = runs.filter((run) => isLive(run)).length;
-  const loggedIn = auth?.state === "logged-in";
+  const activeRun = runs.find((run) => run.runId === openRun);
 
   return (
-    <div className={running ? "app is-running" : "app"}>
-      <Backdrop />
-
-      <header className="titlebar">
-        <div className="brand">
-          <BrandMark />
-          <h1>Skill Trainer</h1>
-        </div>
-        <div className="status" aria-live="polite">
-          {running ? (
-            <span className="status-pill live">
-              <span className="pulse" aria-hidden="true" />
-              {phase}
-              {liveCount > 0 ? <span className="status-count">{liveCount} aktiv</span> : null}
-            </span>
-          ) : summary ? (
-            <span className={improved ? "status-pill good" : "status-pill"}>{resultTitle(summary)}</span>
-          ) : null}
-        </div>
-        <div className="auth">
-          <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={authLabel(auth)}>
-            <span className="pill-dot" aria-hidden="true" />
-            {authLabel(auth)}
-          </span>
-          <button type="button" className="ghost" onClick={() => void login()} disabled={running}>
-            Anmelden
-          </button>
-        </div>
-        {running ? <div className="beam" aria-hidden="true" /> : null}
-      </header>
-
+    <div className="workspace" hidden={!active}>
       <div
         className="layout"
         ref={layoutRef}
@@ -456,7 +623,7 @@ export function App() {
                 {running ? <span className="spin" aria-hidden="true" /> : <PlayIcon />}
                 <span className="label">{running ? phase : "Start"}</span>
               </button>
-              <button type="button" className="danger" onClick={() => void api.cancel()} disabled={!running}>
+              <button type="button" className="danger" onClick={() => void api.cancel(sessionId)} disabled={!running}>
                 <StopIcon />
                 Abbrechen
               </button>
@@ -506,7 +673,7 @@ export function App() {
                 if (item.type === "agent") {
                   const run = runs.find((entry) => entry.runId === item.runId);
                   if (!run) return null;
-                  const classes = ["agent-link", "enter", isLive(run) ? "live" : "", run.runId === active ? "on" : ""];
+                  const classes = ["agent-link", "enter", isLive(run) ? "live" : "", run.runId === openRun ? "on" : ""];
                   return (
                     <button
                       key={item.id}
@@ -562,8 +729,8 @@ export function App() {
               const run = runs.find((item) => item.runId === tab);
               const live = run ? isLive(run) : false;
               return (
-                <div key={tab} className={tab === active ? "tab on" : "tab"}>
-                  <button type="button" role="tab" aria-selected={tab === active} onClick={() => setActive(tab)}>
+                <div key={tab} className={tab === openRun ? "tab on" : "tab"}>
+                  <button type="button" role="tab" aria-selected={tab === openRun} onClick={() => setOpenRun(tab)}>
                     {live ? <span className="spin" aria-hidden="true" /> : null}
                     {run ? tabLabel(run) : tab}
                   </button>
@@ -926,6 +1093,32 @@ function fileChanges(summary: SessionSummary): { path: string; diff: string }[] 
 
 function sameFile(left: SkillFile | undefined, right: SkillFile | undefined): boolean {
   return (left?.text ?? "") === (right?.text ?? "") && (left?.base64 ?? "") === (right?.base64 ?? "") && Boolean(left?.executable) === Boolean(right?.executable);
+}
+
+function trainingLabel(form: TrainRequest, ordinal: number, skillName: string | null): string {
+  const created = form.skillName?.trim();
+  if (form.workflow === "create" && created) return created;
+  if (skillName) return skillName.split(" · ")[0] || skillName;
+  const skill = form.skillPath.trim().split(/[/\\]/).filter(Boolean).pop();
+  if (skill) return skill;
+  return `Training ${ordinal}`;
+}
+
+function trainingStatus(
+  running: boolean,
+  phase: string,
+  summary: SessionSummary | null,
+  liveCount: number,
+): { status: string; tone: "idle" | "live" | "good" | "bad" } {
+  if (running) {
+    const count = liveCount > 0 ? ` · ${liveCount} aktiv` : "";
+    return { status: `${phase}${count}`, tone: "live" };
+  }
+  if (!summary) return { status: "bereit", tone: "idle" };
+  if (summary.cancelled) return { status: "abgebrochen", tone: "bad" };
+  if (summary.error) return { status: "Fehler", tone: "bad" };
+  if (measuredImprovement(summary) || bundleChanged(summary)) return { status: resultTitle(summary), tone: "good" };
+  return { status: resultTitle(summary), tone: "idle" };
 }
 
 function phaseLabel(phase: string): string {

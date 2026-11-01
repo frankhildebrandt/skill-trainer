@@ -3,7 +3,7 @@ import { Cursor, CursorAgentError } from "@cursor/sdk";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AuthStatus, ModelOption, SessionSummary, SkillDraft, TrainRequest, TrainerEvent, Trajectory } from "../shared/types";
+import type { AuthStatus, ModelOption, SessionEvent, SessionSummary, SkillDraft, TrainRequest, TrainerEvent, Trajectory } from "../shared/types";
 import { aggregate } from "../shared/score";
 import { performAttempt } from "../trainer/attempt";
 import { CHECK_COMMAND, harvestChecks, plantChecks, writeChecks, type CheckFile } from "../trainer/checks";
@@ -26,10 +26,16 @@ let pickerWin: BrowserWindow | null = null;
 let pickerWorkspace = "";
 let settlePick: ((prompt: string | null) => void) | null = null;
 let pendingPick: Promise<string | null> | null = null;
-let active: AbortController | null = null;
-let lastSummary: SessionSummary | null = null;
-let lastSkillRoot: string | null = null;
-let writeInProgress = false;
+
+interface SessionRecord {
+  running: boolean;
+  controller: AbortController;
+  summary: SessionSummary | null;
+  skillRoot: string | null;
+  writing: boolean;
+}
+
+const sessions = new Map<string, SessionRecord>();
 
 export function attachWindow(win: BrowserWindow): void {
   windowRef = win;
@@ -39,6 +45,7 @@ export function attachWindow(win: BrowserWindow): void {
 }
 
 export function registerBackend(): void {
+  sessions.clear();
   ipcMain.handle("auth:status", () => readAuth());
   ipcMain.handle("auth:login", async () => {
     await Cursor.auth.login({
@@ -94,29 +101,33 @@ export function registerBackend(): void {
       files: bundle.files.map((file) => file.path),
     };
   });
-  ipcMain.handle("trainer:start", async (_event, request: TrainRequest) => {
-    if (active || writeInProgress) throw new Error("Es läuft schon ein Training oder Speichervorgang.");
+  ipcMain.handle("trainer:start", async (_event, request: TrainRequest, sessionId: unknown) => {
+    const id = parseSessionId(sessionId);
+    const current = sessions.get(id);
+    if (current?.running || current?.writing) throw new Error("Dieses Training läuft schon.");
     const controller = new AbortController();
-    active = controller;
+    const record: SessionRecord = { running: true, controller, summary: null, skillRoot: null, writing: false };
+    sessions.set(id, record);
     try {
       await writeSavedSettings(request);
-      const summary = await runSession(request, controller);
-      lastSummary = summary;
-      return { sessionDir: summary.sessionDir };
+      const summary = await runSession(request, controller, id, record);
+      return { sessionDir: summary.sessionDir, sessionId: id };
     } finally {
-      if (active === controller) active = null;
+      record.running = false;
     }
   });
-  ipcMain.handle("trainer:cancel", async () => {
-    active?.abort();
+  ipcMain.handle("trainer:cancel", async (_event, sessionId: unknown) => {
+    sessions.get(parseSessionId(sessionId))?.controller.abort();
   });
-  ipcMain.handle("trainer:writeBack", async () => {
-    if (active || writeInProgress) throw new Error("Es läuft schon ein Training oder Speichervorgang.");
-    writeInProgress = true;
+  ipcMain.handle("trainer:writeBack", async (_event, sessionId: unknown) => {
+    const record = sessions.get(parseSessionId(sessionId));
+    if (!record) throw new Error("Noch kein abgeschlossener Lauf.");
+    if (record.running || record.writing) throw new Error("Es läuft schon ein Training oder Speichervorgang.");
+    record.writing = true;
     try {
-      return await writeBack();
+      return await writeBack(record);
     } finally {
-      writeInProgress = false;
+      record.writing = false;
     }
   });
   ipcMain.handle("shell:open", async (_event, target: string) => {
@@ -165,7 +176,12 @@ export function registerBackend(): void {
   });
 }
 
-async function runSession(request: TrainRequest, controller: AbortController): Promise<SessionSummary> {
+async function runSession(
+  request: TrainRequest,
+  controller: AbortController,
+  sessionId: string,
+  record: SessionRecord,
+): Promise<SessionSummary> {
   const config = normalizeRequest(request);
   if (config.trainAfterDraft) {
     assertSafeWorkspace(config.workspacePath);
@@ -173,8 +189,8 @@ async function runSession(request: TrainRequest, controller: AbortController): P
     if (!workspaceStat.isDirectory()) throw new Error("Der Projektpfad ist kein Ordner.");
   }
   const bundle = config.workflow === "create" ? await newSkillBundle(config) : await loadSkillBundle(config.skillPath);
-  lastSummary = null;
-  lastSkillRoot = bundle.root;
+  record.summary = null;
+  record.skillRoot = bundle.root;
   const sessionDir = path.join(app.getPath("userData"), "sessions", stamp());
   await fs.mkdir(path.join(sessionDir, "runs"), { recursive: true });
   await fs.writeFile(path.join(sessionDir, "original.md"), bundle.document);
@@ -182,8 +198,9 @@ async function runSession(request: TrainRequest, controller: AbortController): P
   await fs.writeFile(path.join(sessionDir, "request.json"), JSON.stringify(config, null, 2));
 
   const emit = (event: TrainerEvent) => {
-    void fs.appendFile(path.join(sessionDir, "events.jsonl"), `${JSON.stringify(event)}\n`).catch(() => undefined);
-    if (windowRef && !windowRef.isDestroyed()) windowRef.webContents.send("trainer:event", event);
+    const tagged: SessionEvent = { ...event, sessionId };
+    void fs.appendFile(path.join(sessionDir, "events.jsonl"), `${JSON.stringify(tagged)}\n`).catch(() => undefined);
+    if (windowRef && !windowRef.isDestroyed()) windowRef.webContents.send("trainer:event", tagged);
   };
   const propose = sessionProposer(config, sessionDir, emit);
   let draft: SkillDraft | undefined;
@@ -232,7 +249,7 @@ async function runSession(request: TrainRequest, controller: AbortController): P
   await fs.writeFile(path.join(sessionDir, "best.md"), summary.bestSkill);
   await writeSkillTree(path.join(sessionDir, "best-skill"), summary.bestFiles ?? bundle.files);
   await fs.writeFile(path.join(sessionDir, "summary.json"), JSON.stringify(summarize(summary), null, 2));
-  lastSummary = summary;
+  record.summary = summary;
   emit({ type: "done", summary });
   return summary;
 }
@@ -465,16 +482,23 @@ async function runOne(
   }
 }
 
-async function writeBack(): Promise<{ backupPath: string | null; skillPath: string }> {
-  if (!lastSummary || !lastSkillRoot) throw new Error("Noch kein abgeschlossener Lauf.");
-  const summary = lastSummary;
+async function writeBack(record: SessionRecord): Promise<{ backupPath: string | null; skillPath: string }> {
+  if (!record.summary || !record.skillRoot) throw new Error("Noch kein abgeschlossener Lauf.");
+  const summary = record.summary;
   const files = summary.bestFiles ?? [];
   if (sameBundle(summary.originalSkill, summary.bestSkill, summary.originalFiles, files)) {
     throw new Error("Es gibt keine übernommenen Änderungen.");
   }
-  const output = await saveSkillOutput({ destination: lastSkillRoot, files,
+  const output = await saveSkillOutput({ destination: record.skillRoot, files,
     originalFiles: summary.originalFiles, create: summary.workflow === "create", stamp: stamp() });
   return output;
+}
+
+function parseSessionId(value: unknown): string {
+  if (typeof value !== "string") throw new Error("Training auswählen.");
+  const id = value.trim();
+  if (!id || id.length > 80 || /[^\w.-]/.test(id)) throw new Error("Ungültige Training-ID.");
+  return id;
 }
 
 async function readAuth(): Promise<AuthStatus> {
@@ -577,5 +601,5 @@ function dialogParent(): BrowserWindow {
 }
 
 function stamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-");
+  return `${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 6)}`;
 }

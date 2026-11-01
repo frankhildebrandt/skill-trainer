@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TrainRequest, TrainerEvent } from "../shared/types";
+import type { SessionEvent, TrainRequest } from "../shared/types";
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => Promise<any>>(),
@@ -27,7 +27,7 @@ vi.mock("../trainer/isolate", () => ({
 import { attachWindow, registerBackend } from "./backend";
 
 let root: string;
-const events: TrainerEvent[] = [];
+const events: SessionEvent[] = [];
 const document = "---\nname: parser-helper\ndescription: Handle parser work.\n---\n\n# Parser\nUse references and scripts.\n";
 
 beforeEach(async () => {
@@ -38,7 +38,7 @@ beforeEach(async () => {
   mocks.attempt.mockReset();
   events.length = 0;
   registerBackend();
-  attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send: (_name: string, event: TrainerEvent) => events.push(event) } } as never);
+  attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send: (_name: string, event: SessionEvent) => events.push(event) } } as never);
 });
 
 afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
@@ -49,7 +49,12 @@ function request(overrides: Partial<TrainRequest> = {}): TrainRequest {
     targetModel: "composer-2.5", optimizerModel: "composer-2.5", steps: 1, trainBatch: 1, selectionRepeats: 1, concurrency: 1,
     learningRate: 3, slowUpdate: false, gateOnEmptyRepo: false, attemptTimeoutMin: 12, verifyTimeoutSec: 180, ...overrides };
 }
-function start(input: TrainRequest) { return mocks.handlers.get("trainer:start")!(null, input); }
+function start(input: TrainRequest, sessionId = "tab") {
+  return mocks.handlers.get("trainer:start")!(null, input, sessionId) as Promise<{ sessionDir: string; sessionId: string }>;
+}
+function writeBack(sessionId = "tab") {
+  return mocks.handlers.get("trainer:writeBack")!(null, sessionId);
+}
 function lastSummary() {
   const done = events.slice().reverse().find((event) => event.type === "done");
   if (!done || done.type !== "done") throw new Error("No summary");
@@ -72,10 +77,10 @@ describe("skill workflow IPC", () => {
     expect(mocks.attempt).not.toHaveBeenCalled();
     expect(mocks.verify).not.toHaveBeenCalled();
     expect(await fs.readFile(path.join(result.sessionDir, "best-skill/SKILL.md"), "utf8")).toBe(document);
-    const saved = await mocks.handlers.get("trainer:writeBack")!();
+    const saved = await writeBack();
     expect(saved.backupPath).toBeNull();
     expect(await fs.readFile(path.join(input.skillPath, "SKILL.md"), "utf8")).toBe(document);
-    await expect(mocks.handlers.get("trainer:writeBack")!()).rejects.toThrow(/existiert schon/);
+    await expect(writeBack()).rejects.toThrow(/existiert schon/);
   });
 
   it("keeps an existing skill untouched until apply, then backs up and deletes old references", async () => {
@@ -86,7 +91,7 @@ describe("skill workflow IPC", () => {
     mocks.propose.mockResolvedValue({ ...proposal(), files: [...proposal().files, { op: "delete", path: "old.md", content: "" }] });
     await start(request({ workflow: "pretrain", skillPath }));
     expect(await fs.readFile(path.join(skillPath, "old.md"), "utf8")).toBe("obsolete");
-    const saved = await mocks.handlers.get("trainer:writeBack")!();
+    const saved = await writeBack();
     expect(await fs.readFile(path.join(saved.backupPath, "old.md"), "utf8")).toBe("obsolete");
     await expect(fs.stat(path.join(skillPath, "old.md"))).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -100,7 +105,7 @@ describe("skill workflow IPC", () => {
     expect(lastSummary()).toMatchObject({ fineTuned: false, bestSkill: document, draft: { kind: "create" } });
     expect(lastSummary().error).toContain("schon erfolgreich");
     expect(mocks.attempt).not.toHaveBeenCalled();
-    expect((await mocks.handlers.get("trainer:writeBack")!()).backupPath).toBeNull();
+    expect((await writeBack()).backupPath).toBeNull();
   });
 
   it("uses the draft as the fine-tuning baseline and saves the gated winner", async () => {
@@ -119,7 +124,36 @@ describe("skill workflow IPC", () => {
     expect(lastSummary()).toMatchObject({ fineTuned: true, originalSkill: "", draft: { skill: document }, best: { gate: 1 }, baseline: { gate: 0.925 } });
     expect(lastSummary().bestSkill).toContain("Run npm test before editing.");
     expect(events.filter((event) => event.type === "done")).toHaveLength(1);
-    await mocks.handlers.get("trainer:writeBack")!();
+    await writeBack();
     expect(await fs.readFile(path.join(input.skillPath, "SKILL.md"), "utf8")).toContain("Run npm test before editing.");
+  });
+
+  it("runs two trainings at once and keeps their results apart", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mocks.propose.mockImplementation(async () => {
+      await gate;
+      return proposal();
+    });
+    const otherPath = path.join(root, "other-skill");
+    const first = start(request(), "one");
+    const second = start(request({ skillName: "other-skill", skillPath: otherPath }), "two");
+    await expect(start(request(), "one")).rejects.toThrow(/läuft schon/);
+    await vi.waitFor(() => {
+      expect(events.some((event) => event.sessionId === "one")).toBe(true);
+      expect(events.some((event) => event.sessionId === "two")).toBe(true);
+    });
+    release?.();
+    const [left, right] = await Promise.all([first, second]);
+    expect(left.sessionId).toBe("one");
+    expect(right.sessionId).toBe("two");
+    expect(left.sessionDir).not.toBe(right.sessionDir);
+    expect(events.filter((event) => event.type === "done").map((event) => event.sessionId).sort()).toEqual(["one", "two"]);
+    await writeBack("one");
+    await writeBack("two");
+    expect(await fs.readFile(path.join(root, "new-skill", "SKILL.md"), "utf8")).toBe(document);
+    expect(await fs.readFile(path.join(otherPath, "SKILL.md"), "utf8")).toBe(document);
   });
 });

@@ -190,6 +190,9 @@ export type TrainerEvent =
   | { type: "done"; summary: SessionSummary }
   | { type: "error"; message: string };
 
+/** A trainer event tagged for one global training tab. */
+export type SessionEvent = TrainerEvent & { sessionId: string };
+
 export interface TrainerApi {
   authStatus: () => Promise<AuthStatus>;
   authLogin: () => Promise<AuthStatus>;
@@ -208,13 +211,13 @@ export interface TrainerApi {
   }>;
   loadSettings: () => Promise<TrainRequest | null>;
   saveSettings: (request: TrainRequest) => Promise<void>;
-  start: (request: TrainRequest) => Promise<{ sessionDir: string }>;
-  cancel: () => Promise<void>;
-  writeBack: () => Promise<{ backupPath: string | null; skillPath: string }>;
+  start: (request: TrainRequest, sessionId: string) => Promise<{ sessionDir: string; sessionId: string }>;
+  cancel: (sessionId: string) => Promise<void>;
+  writeBack: (sessionId: string) => Promise<{ backupPath: string | null; skillPath: string }>;
   openPath: (target: string) => Promise<void>;
   pickCursorRun: (workspacePath: string) => Promise<string | null>;
   listCursorRuns: (scope?: "local" | "cloud") => Promise<CursorRunCatalog>;
   chooseCursorRun: (prompt: string) => Promise<void>;
   cancelCursorRun: () => Promise<void>;
-  onEvent: (cb: (event: TrainerEvent) => void) => () => void;
+  onEvent: (cb: (event: SessionEvent) => void) => () => void;
 }
