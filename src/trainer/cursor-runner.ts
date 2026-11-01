@@ -125,10 +125,9 @@ async function completeTextOnce(
     local: { cwd: dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
   });
   try {
-    onActivity?.({ op: "note", text: "Durchlauf 1 von 2" });
     const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity);
     if (isProposal(first)) return first;
-    onActivity?.({ op: "note", text: "Durchlauf 2 von 2. Die erste Antwort war kein JSON." });
+    onActivity?.({ op: "note", text: `Zweiter Versuch im selben Lauf. ${proposalProblem(first)}` });
     return await sendOnce(
       agent,
       "Your previous reply was not one JSON object. Reply with that JSON object only. Do not restate the analysis.",
@@ -152,14 +151,28 @@ async function sendOnce(
   };
   if (signal.aborted) cancel();
   else signal.addEventListener("abort", cancel, { once: true });
+  let assistant = "";
+  let proposal: string | null = null;
+  const watch = (update: ActivityUpdate) => {
+    onActivity?.(update);
+    if (proposal || update.op !== "append" || update.kind !== "text") return;
+    assistant += update.text;
+    if (!isProposal(assistant)) return;
+    proposal = assistant;
+    onActivity?.({ op: "note", text: "Der Vorschlag ist vollständig. Dieser Durchlauf endet hier, damit keine weitere Überlegung im selben Lauf startet." });
+    if (!signal.aborted) cancel();
+  };
   try {
-    await followStream(run, [], onActivity);
+    await followStream(run, [], watch);
   } catch (err) {
-    if (isAbortError(err) || signal.aborted || isStall(err)) throw err;
-    onActivity?.({ op: "note", text: err instanceof Error ? err.message : String(err) });
+    if (proposal) {
+      // The turn was stopped because the proposal was already complete.
+    } else if (isAbortError(err) || signal.aborted || isStall(err)) throw err;
+    else onActivity?.({ op: "note", text: err instanceof Error ? err.message : String(err) });
   }
   const result = await run.wait();
   signal.removeEventListener("abort", cancel);
+  if (proposal) return proposal;
   if (result.status === "cancelled") {
     const error = new Error("Optimierer abgebrochen");
     error.name = "AbortError";
@@ -169,6 +182,15 @@ async function sendOnce(
     throw new Error(result.error?.message ?? "Optimierer-Lauf ist fehlgeschlagen.");
   }
   return result.result ?? "";
+}
+
+function proposalProblem(text: string): string {
+  try {
+    parseProposal(extractJson(text));
+    return "Die erste Antwort enthielt keinen verwertbaren Vorschlag.";
+  } catch (err) {
+    return err instanceof Error ? err.message : "Die erste Antwort war kein Vorschlag.";
+  }
 }
 
 function isProposal(text: string): boolean {

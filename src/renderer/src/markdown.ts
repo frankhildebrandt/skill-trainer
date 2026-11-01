@@ -1,3 +1,5 @@
+import { firstJsonObject } from "../../shared/json-object";
+
 export type Inline =
   | { type: "text"; text: string }
   | { type: "code"; text: string }
@@ -12,22 +14,74 @@ export type Block =
   | { type: "ol"; items: Inline[][] }
   | { type: "table"; header: Inline[][]; rows: Inline[][][] };
 
-export function proposalJson(text: string): { before: string; pretty: string; after: string } | null {
-  const trimmed = text.trim();
-  if (!trimmed.includes("{") || !trimmed.includes("}")) return null;
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (end <= start) return null;
-  const before = trimmed.slice(0, start).trim();
-  const after = trimmed.slice(end + 1).trim();
-  if (before.length > 280) return null;
+export interface ShownEdit {
+  op: string;
+  target: string;
+  content: string;
+  why: string;
+}
+
+export interface ShownFile {
+  op: string;
+  path: string;
+  content: string;
+  why: string;
+  executable: boolean;
+}
+
+export interface ShownProposal {
+  reasoning: string;
+  slow: string | null;
+  edits: ShownEdit[];
+  files: ShownFile[];
+}
+
+export function readProposal(text: string): ShownProposal | null {
+  const raw = firstJsonObject(text);
+  if (!raw) return null;
+  let value: unknown;
   try {
-    const value = JSON.parse(trimmed.slice(start, end + 1));
-    if (!value || typeof value !== "object") return null;
-    return { before, pretty: JSON.stringify(value, null, 2), after };
+    value = JSON.parse(raw);
   } catch {
     return null;
   }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const reasoning = typeof record.reasoning === "string" ? record.reasoning.trim() : "";
+  const slow = typeof record.slow === "string" && record.slow.trim() ? record.slow.trim() : null;
+  const edits = Array.isArray(record.edits) ? record.edits.flatMap(readEdit) : [];
+  const files = Array.isArray(record.files) ? record.files.flatMap(readFile) : [];
+  if (!reasoning && !slow && edits.length === 0 && files.length === 0) return null;
+  return { reasoning, slow, edits, files };
+}
+
+export function proposalStarted(text: string): boolean {
+  return text.includes("{") && /"(?:reasoning|files|edits|slow)"/.test(text);
+}
+
+function readEdit(value: unknown): ShownEdit[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  if (typeof record.op !== "string") return [];
+  return [{
+    op: record.op,
+    target: typeof record.target === "string" ? record.target : "",
+    content: typeof record.content === "string" ? record.content : "",
+    why: typeof record.why === "string" ? record.why : "",
+  }];
+}
+
+function readFile(value: unknown): ShownFile[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  if (typeof record.op !== "string" || typeof record.path !== "string") return [];
+  return [{
+    op: record.op,
+    path: record.path,
+    content: typeof record.content === "string" ? record.content : "",
+    why: typeof record.why === "string" ? record.why : "",
+    executable: record.executable === true,
+  }];
 }
 
 export function parseMarkdown(source: string): Block[] {

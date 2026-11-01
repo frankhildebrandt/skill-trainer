@@ -204,7 +204,7 @@ async function runSession(request: TrainRequest, controller: AbortController): P
       }
       emit({ type: "phase", phase: "preflight" });
       emit({ type: "log", message: config.gateOnEmptyRepo
-        ? "Vorprüfung: auf einem leeren Repository muss der Prüfbefehl noch fehlschlagen. Training und Gate sehen den Projektcode nicht."
+        ? "Vorprüfung: auf einem leeren Repository muss der Prüfbefehl noch fehlschlagen. Training läuft im Projekt, das Gate auf einem neuen leeren Repository."
         : "Vorprüfung: der Prüfbefehl muss auf einer frischen Kopie noch fehlschlagen." });
       const prepared = draft ? { ...bundle, document: draft.skill, files: draft.files } : bundle;
       const result = await runPrepared(config, prepared, grading, sessionDir, controller, (event) => {

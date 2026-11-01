@@ -1,3 +1,4 @@
+import { firstJsonObject } from "../shared/json-object";
 import type { EditOp, FileEdit, SkillEdit } from "../shared/types";
 import { sanitizeRelative } from "./skill-bundle";
 
@@ -11,14 +12,9 @@ export interface Proposal {
 }
 
 export function extractJson(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const raw = fenced?.[1] ?? text;
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) {
-    throw new Error("Die Optimierer-Antwort enthält kein JSON-Objekt.");
-  }
-  return JSON.parse(raw.slice(start, end + 1)) as unknown;
+  const raw = firstJsonObject(text);
+  if (!raw) throw new Error("Die Optimierer-Antwort enthält kein vollständiges JSON-Objekt.");
+  return JSON.parse(raw) as unknown;
 }
 
 export function parseProposal(value: unknown): Proposal {

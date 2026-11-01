@@ -23,7 +23,7 @@ import {
   TerminalIcon,
 } from "./icons";
 import { MarkdownView } from "./MarkdownView";
-import { proposalJson } from "./markdown";
+import { proposalStarted, readProposal, type ShownFile, type ShownProposal } from "./markdown";
 import { TrainerForm } from "./TrainerForm";
 import { bundleChanged, measuredImprovement, reportBody, resultTitle } from "./report";
 import { ResizeHandle, usePaneSizes } from "./ResizeHandle";
@@ -552,9 +552,7 @@ export function App() {
                   </div>
                   {activeRun.blocks.length > 0 ? (
                     <div className="stream">
-                      {activeRun.blocks.map((block, index) => (
-                        <BlockView key={index} block={block} />
-                      ))}
+                      <StreamBlocks blocks={activeRun.blocks} />
                     </div>
                   ) : (
                     <p className="quiet waiting">Wartet auf die erste Ausgabe.</p>
@@ -749,6 +747,21 @@ function phaseName(phase: Trajectory["phase"]): string {
   return "Slow";
 }
 
+function StreamBlocks({ blocks }: { blocks: RunBlock[] }) {
+  const joined = blocks.filter((block) => block.kind === "text").map((block) => block.text).join("");
+  const proposal = readProposal(joined);
+  const started = !proposal && proposalStarted(joined);
+  let textShown = false;
+  return blocks.map((block, index) => {
+    if (block.kind !== "text") return <BlockView key={index} block={block} />;
+    if (textShown) return null;
+    textShown = true;
+    if (proposal) return <ProposalView key="proposal" proposal={proposal} />;
+    if (started) return <p key="draft" className="note">Vorschlag wird geschrieben…</p>;
+    return <BlockView key={index} block={block} />;
+  });
+}
+
 function BlockView({ block }: { block: RunBlock }) {
   if (block.kind === "thinking") {
     return (
@@ -759,19 +772,9 @@ function BlockView({ block }: { block: RunBlock }) {
     );
   }
   if (block.kind === "text") {
-    const proposal = proposalJson(block.text);
-    if (proposal) {
-      return (
-        <>
-          {proposal.before ? <MarkdownView text={proposal.before} /> : null}
-          <pre className="proposal">
-            <code>{proposal.pretty}</code>
-          </pre>
-          {proposal.after ? <MarkdownView text={proposal.after} /> : null}
-        </>
-      );
-    }
-    if (block.text.trim().startsWith("{")) return <pre className="proposal draft"><code>{block.text}</code></pre>;
+    const proposal = readProposal(block.text);
+    if (proposal) return <ProposalView proposal={proposal} />;
+    if (proposalStarted(block.text)) return <p className="note">Vorschlag wird geschrieben…</p>;
     return <MarkdownView text={block.text} />;
   }
   if (block.kind === "tool") {
@@ -788,6 +791,64 @@ function BlockView({ block }: { block: RunBlock }) {
     );
   }
   return <p className="note">{block.text}</p>;
+}
+
+function ProposalView({ proposal }: { proposal: ShownProposal }) {
+  return (
+    <article className="proposal-card">
+      <header>Vorschlag · {proposal.files.length} {proposal.files.length === 1 ? "Datei" : "Dateien"} · {proposal.edits.length} Textänderungen</header>
+      {proposal.reasoning ? (
+        <section>
+          <h3>Begründung</h3>
+          <MarkdownView text={proposal.reasoning} />
+        </section>
+      ) : null}
+      {proposal.slow ? (
+        <section>
+          <h3>Slow-Update</h3>
+          <MarkdownView text={proposal.slow} />
+        </section>
+      ) : null}
+      {proposal.files.map((file, index) => (
+        <FileView key={`${file.path}-${index}`} file={file} />
+      ))}
+      {proposal.edits.map((edit, index) => (
+        <section className="edit" key={`${edit.op}-${index}`}>
+          <h3>{opLabel(edit.op)} in SKILL.md</h3>
+          {edit.why ? <p className="why">{edit.why}</p> : null}
+          {edit.target ? <pre className="body">{edit.target}</pre> : null}
+          {edit.content ? <pre className="body">{edit.content}</pre> : null}
+        </section>
+      ))}
+    </article>
+  );
+}
+
+function FileView({ file }: { file: ShownFile }) {
+  const frontmatter = file.path.endsWith(".md") ? file.content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/) : null;
+  const body = frontmatter ? file.content.slice(frontmatter[0].length) : file.content;
+  return (
+    <section className="file">
+      <header>
+        <code>{opLabel(file.op)}</code>
+        <span className="path">{file.path}</span>
+        {file.executable ? <span>ausführbar</span> : null}
+      </header>
+      {file.why ? <p className="why">{file.why}</p> : null}
+      {file.op === "delete" ? <p className="why">Datei wird gelöscht.</p> : null}
+      {frontmatter?.[1] ? <pre className="body">{frontmatter[1]}</pre> : null}
+      {body ? (file.path.endsWith(".md") ? <MarkdownView text={body} /> : <pre className="body">{body}</pre>) : null}
+    </section>
+  );
+}
+
+function opLabel(op: string): string {
+  if (op === "write") return "schreiben";
+  if (op === "replace") return "ersetzen";
+  if (op === "delete") return "löschen";
+  if (op === "append") return "anhängen";
+  if (op === "insert_after") return "einfügen";
+  return op;
 }
 
 function skillLabel(preview: { name: string; fileCount: number }): string {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInline, parseMarkdown, proposalJson } from "./markdown";
+import { parseInline, parseMarkdown, readProposal } from "./markdown";
 
 describe("parseMarkdown", () => {
   it("reads headings, lists, and fenced code", () => {
@@ -34,10 +34,13 @@ describe("parseMarkdown", () => {
     expect(table.rows[5]?.[1]?.[0]).toMatchObject({ text: "Minimal generated-catalog stubs when modules_gen.go etc. are absent" });
   });
 
-  it("pretty-prints an optimizer JSON object", () => {
-    const parsed = proposalJson('{"reasoning":"knapp","edits":[],"files":[],"slow":""}');
-    expect(parsed?.pretty).toContain('\n  "reasoning": "knapp"');
-    expect(proposalJson("Der Agent sucht weiter und schreibt keinen Vorschlag.")).toBeNull();
+  it("reads an optimizer proposal with real line breaks in file content", () => {
+    const parsed = readProposal('{"reasoning":"knapp","edits":[],"files":[{"op":"write","path":"SKILL.md","content":"# Titel\\n\\nAbsatz"}],"slow":""}');
+    expect(parsed?.reasoning).toBe("knapp");
+    expect(parsed?.files[0]).toMatchObject({ path: "SKILL.md", content: "# Titel\n\nAbsatz" });
+    const split = '{"reasoning":"knapp","files":[{"op":"write","path":"reference.md","content":"# Vertrag\\n{ok}"}]}';
+    expect(readProposal(split.slice(0, 48) + split.slice(48))?.files[0]?.content).toBe("# Vertrag\n{ok}");
+    expect(readProposal("Der Agent sucht weiter und schreibt keinen Vorschlag.")).toBeNull();
   });
 
   it("marks strong, emphasis, and code inside a paragraph", () => {

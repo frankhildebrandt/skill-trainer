@@ -22,6 +22,18 @@ describe("parseProposal", () => {
     expect(parsed.files).toEqual([]);
   });
 
+  it("reads a proposal whose file content contains markdown code fences", () => {
+    const proposal = {
+      reasoning: "Skill carries its own layout.",
+      edits: [],
+      files: [{ op: "write", path: "SKILL.md", content: "# Layout\n\n```\nmodules/discovery/<vendor>/\n  module.json\n```\n\n```sh\ngo test ./...\n```\n" }],
+      slow: "",
+    };
+    const parsed = parseProposal(extractJson(JSON.stringify(proposal)));
+    expect(parsed.reasoning).toBe("Skill carries its own layout.");
+    expect(parsed.files?.[0]?.content).toContain("go test ./...");
+  });
+
   it("parses full rewrites, executable scripts, and companion deletions", () => {
     const result = parseProposal({ files: [
       { op: "write", path: "SKILL.md", content: "# New skill" },
