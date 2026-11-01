@@ -96,16 +96,30 @@ describe("skill workflow IPC", () => {
     await expect(fs.stat(path.join(skillPath, "old.md"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("retains a completed draft when the later training preflight fails", async () => {
+  it("still fine-tunes when the project copy already passes the check", async () => {
     const workspacePath = path.join(root, "project");
     await fs.mkdir(workspacePath);
     mocks.propose.mockResolvedValue(proposal());
     mocks.verify.mockResolvedValue({ exitCode: 0, output: "already green" });
+    mocks.attempt.mockImplementation(async (input) => ({ runId: input.runId, phase: input.phase, ground: input.ground,
+      taskPrompt: input.taskPrompt, summary: "done", diffStat: "", keptWorkspace: null,
+      score: { hard: 1, soft: 0.5, gate: 0.925, verifyExitCode: 0, verifyOutput: "ok", toolCalls: 1, durationMs: 1, status: "finished" } }));
     await start(request({ trainAfterDraft: true, workspacePath, auftrag: "Implement the parser.", verifyCommand: "npm test" }));
-    expect(lastSummary()).toMatchObject({ fineTuned: false, bestSkill: document, draft: { kind: "create" } });
-    expect(lastSummary().error).toContain("schon erfolgreich");
+    expect(events.some((event) => event.type === "log" && event.message.includes("Fine-Tuning startet trotzdem"))).toBe(true);
+    expect(mocks.attempt).toHaveBeenCalled();
+    expect(lastSummary()).toMatchObject({ fineTuned: true, draft: { kind: "create" } });
+    expect(lastSummary().error).toBeUndefined();
+  });
+
+  it("stops before fine-tuning when an empty repository already passes the check", async () => {
+    const workspacePath = path.join(root, "project");
+    await fs.mkdir(workspacePath);
+    mocks.propose.mockResolvedValue(proposal());
+    mocks.verify.mockResolvedValue({ exitCode: 0, output: "already green" });
+    await start(request({ trainAfterDraft: true, gateOnEmptyRepo: true, workspacePath, auftrag: "Implement the parser.", verifyCommand: "npm test" }));
+    expect(lastSummary()).toMatchObject({ fineTuned: false, draft: { kind: "create" } });
+    expect(lastSummary().error).toContain("leeren Repository schon erfolgreich");
     expect(mocks.attempt).not.toHaveBeenCalled();
-    expect((await writeBack()).backupPath).toBeNull();
   });
 
   it("uses the draft as the fine-tuning baseline and saves the gated winner", async () => {

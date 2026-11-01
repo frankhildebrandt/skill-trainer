@@ -363,18 +363,16 @@ async function runPrepared(
       error.name = "AbortError";
       throw error;
     }
-    if (result.exitCode === 0) {
-      throw new Error(
-        config.gateOnEmptyRepo
-          ? "Der Prüfbefehl ist auf einem leeren Repository schon erfolgreich. Dann sieht das Gate keinen Unterschied zwischen einem Skill, der das Modul erzeugt, und einem leeren Ordner."
-          : "Der Prüfbefehl ist auf einer frischen Kopie schon erfolgreich. Dann unterscheidet das Gate einen besseren Skill nicht vom Nichtstun. Der Befehl soll erst fehlschlagen und nach dem Auftrag gelingen.",
-      );
+    if (result.exitCode === 0 && config.gateOnEmptyRepo) {
+      throw new Error("Der Prüfbefehl ist auf einem leeren Repository schon erfolgreich. Dann sieht das Gate keinen Unterschied zwischen einem Skill, der das Modul erzeugt, und einem leeren Ordner.");
     }
     emit({
       type: "log",
-      message: config.gateOnEmptyRepo
-        ? `Leeres Repository ist rot (Exit ${result.exitCode ?? "keins"}). Training in einer Kopie des Projekts, Gate auf einem neuen leeren Repository.`
-        : `Vorprüfung fehlgeschlagen (Exit ${result.exitCode ?? "keins"}). Das ist die richtige Ausgangslage.`,
+      message: result.exitCode === 0
+        ? "Die frische Projektkopie besteht die Prüfung schon. Fine-Tuning startet trotzdem. Das Gate kann in diesem Lauf Rot und Grün nicht mehr unterscheiden und vergleicht nur noch Aufwand und Laufzeit."
+        : config.gateOnEmptyRepo
+          ? `Leeres Repository ist rot (Exit ${result.exitCode ?? "keins"}). Training in einer Kopie des Projekts, Gate auf einem neuen leeren Repository.`
+          : `Vorprüfung fehlgeschlagen (Exit ${result.exitCode ?? "keins"}). Das ist die richtige Ausgangslage.`,
     });
   } finally {
     await preflight.cleanup();
