@@ -1,3 +1,4 @@
+import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell, type NativeImage } from "electron";
 import { Cursor, CursorAgentError } from "@cursor/sdk";
 import { existsSync } from "node:fs";
@@ -52,11 +53,21 @@ export function registerBackend(): void {
   currentLocale = resolveLocale(app.getPreferredSystemLanguages());
   const localeReady = readSavedLocale().then((locale) => { currentLocale = locale; });
   let localeWrite = Promise.resolve();
-  ipcMain.handle("locale:load", async () => {
+  const handle: typeof ipcMain.handle = (channel, listener) => {
+    ipcMain.handle(channel, async (...args) => {
+      await localeReady;
+      try {
+        return await listener(...args);
+      } catch (error) {
+        throw explain(error);
+      }
+    });
+  };
+  handle("locale:load", async () => {
     await localeReady;
     return currentLocale;
   });
-  ipcMain.handle("locale:save", async (_event, locale: unknown) => {
+  handle("locale:save", async (_event, locale: unknown) => {
     await localeReady;
     if (!isLocale(locale)) throw new Error(t("backend.invalidLocale"));
     currentLocale = locale;
@@ -67,8 +78,8 @@ export function registerBackend(): void {
     localeWrite = localeWrite.catch(() => undefined).then(() => writeSavedLocale(locale));
     await localeWrite;
   });
-  ipcMain.handle("auth:status", () => readAuth());
-  ipcMain.handle("auth:login", async () => {
+  handle("auth:status", () => readAuth());
+  handle("auth:login", async () => {
     await Cursor.auth.login({
       apiKeyName: "skill-trainer",
       openBrowser: (url) => {
@@ -77,8 +88,8 @@ export function registerBackend(): void {
     });
     return readAuth();
   });
-  ipcMain.handle("models:list", () => listModels());
-  ipcMain.handle("dialog:skill", async () => {
+  handle("models:list", () => listModels());
+  handle("dialog:skill", async () => {
     await localeReady;
     const result = await dialog.showOpenDialog(dialogParent(), {
       title: t("backend.chooseSkill"),
@@ -86,7 +97,7 @@ export function registerBackend(): void {
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
-  ipcMain.handle("dialog:folder", async () => {
+  handle("dialog:folder", async () => {
     await localeReady;
     const result = await dialog.showOpenDialog(dialogParent(), {
       title: t("backend.chooseProject"),
@@ -94,13 +105,13 @@ export function registerBackend(): void {
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
-  ipcMain.handle("skills:list", async (_event, workspacePath: string) => {
+  handle("skills:list", async (_event, workspacePath: string) => {
     const resolved = path.resolve(String(workspacePath ?? ""));
     const stat = await fs.stat(resolved).catch(() => null);
     if (!stat?.isDirectory()) throw new Error(t("backend.chooseProjectFirst"));
     return listProjectSkills(resolved);
   });
-  ipcMain.handle("dialog:skill-destination", async () => {
+  handle("dialog:skill-destination", async () => {
     await localeReady;
     const result = await dialog.showSaveDialog(dialogParent(), {
       title: t("backend.skillDestination"),
@@ -110,11 +121,11 @@ export function registerBackend(): void {
     });
     return result.canceled ? null : (result.filePath ?? null);
   });
-  ipcMain.handle("settings:load", () => readSavedSettings());
-  ipcMain.handle("settings:save", async (_event, request: TrainRequest) => {
+  handle("settings:load", () => readSavedSettings());
+  handle("settings:save", async (_event, request: TrainRequest) => {
     await writeSavedSettings(request);
   });
-  ipcMain.handle("skill:read", async (_event, skillPath: string) => {
+  handle("skill:read", async (_event, skillPath: string) => {
     const bundle = await loadSkillBundle(skillPath);
     return {
       name: bundle.name,
@@ -125,7 +136,7 @@ export function registerBackend(): void {
       files: bundle.files.map((file) => file.path),
     };
   });
-  ipcMain.handle("trainer:start", async (_event, request: TrainRequest, sessionId: unknown) => {
+  handle("trainer:start", async (_event, request: TrainRequest, sessionId: unknown) => {
     await localeReady;
     const id = parseSessionId(sessionId);
     const current = sessions.get(id);
@@ -141,10 +152,10 @@ export function registerBackend(): void {
       record.running = false;
     }
   });
-  ipcMain.handle("trainer:cancel", async (_event, sessionId: unknown) => {
+  handle("trainer:cancel", async (_event, sessionId: unknown) => {
     sessions.get(parseSessionId(sessionId))?.controller.abort();
   });
-  ipcMain.handle("trainer:writeBack", async (_event, sessionId: unknown) => {
+  handle("trainer:writeBack", async (_event, sessionId: unknown) => {
     const record = sessions.get(parseSessionId(sessionId));
     if (!record) throw new Error(t("backend.noFinishedRun"));
     if (record.running || record.writing) throw new Error(t("backend.busy"));
@@ -155,11 +166,11 @@ export function registerBackend(): void {
       record.writing = false;
     }
   });
-  ipcMain.handle("shell:open", async (_event, target: string) => {
+  handle("shell:open", async (_event, target: string) => {
     const error = await shell.openPath(target);
     if (error) throw new Error(error);
   });
-  ipcMain.handle("runs:pick", async (_event, workspacePath: string) => {
+  handle("runs:pick", async (_event, workspacePath: string) => {
     const resolved = path.resolve(String(workspacePath ?? ""));
     const stat = await fs.stat(resolved).catch(() => null);
     if (!stat?.isDirectory()) throw new Error(t("backend.chooseProjectFirst"));
@@ -182,20 +193,20 @@ export function registerBackend(): void {
     });
     return pendingPick;
   });
-  ipcMain.handle("runs:catalog", async (_event, scope: unknown) => {
+  handle("runs:catalog", async (_event, scope: unknown) => {
     await localeReady;
     if (!pickerWorkspace) throw new Error(t("backend.noProject"));
     const which = scope === "local" || scope === "cloud" ? scope : "all";
     return listRepoRuns(pickerWorkspace, undefined, which, currentLocale);
   });
-  ipcMain.handle("runs:choose", (event, prompt: unknown) => {
+  handle("runs:choose", (event, prompt: unknown) => {
     const text = typeof prompt === "string" ? prompt.trim() : "";
     if (!text) return;
     const win = BrowserWindow.fromWebContents(event.sender);
     settlePick?.(text);
     if (win && !win.isDestroyed()) win.close();
   });
-  ipcMain.handle("runs:cancel", (event) => {
+  handle("runs:cancel", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     settlePick?.(null);
     if (win && !win.isDestroyed()) win.close();
@@ -307,7 +318,7 @@ function sessionProposer(
     const cwd = path.join(sessionDir, "optimizer", runId);
     await fs.mkdir(cwd, { recursive: true });
     try {
-      const proposal = await proposeWithCursor({ ...input, model: config.optimizerModel, cwd,
+      const proposal = await proposeWithCursor({ ...input, translate: t, model: config.optimizerModel, cwd,
         onActivity: (update) => emit({ type: "run_activity", runId, update }) });
       emit({ type: "run_activity", runId, update: { op: "note", text: t("backend.proposalReady") }, settled: true });
       return proposal;
@@ -383,7 +394,7 @@ async function runPrepared(
     : await isolateWorkspace(config.workspacePath, preflightDir);
   try {
     if (grading.checks.length > 0) await plantChecks(preflight.dir, grading.checks);
-    const result = await runVerify(grading.verifyCommand, preflight.dir, config.verifyTimeoutMs, controller.signal);
+    const result = await runVerify(grading.verifyCommand, preflight.dir, config.verifyTimeoutMs, controller.signal, t);
     if (controller.signal.aborted) {
       const error = new Error(t("backend.cancelled"));
       error.name = "AbortError";
@@ -451,6 +462,7 @@ async function runOne(
   emit({ type: "run_started", run: { runId, phase: input.phase, ground: input.ground, taskPrompt: input.taskPrompt } });
   try {
     const trajectory = await performAttempt({
+      translate: t,
       runId,
       phase: input.phase,
       ground: input.ground,
@@ -576,6 +588,11 @@ function summarize(summary: SessionSummary): unknown {
 }
 
 function explain(err: unknown): Error {
+  if (err instanceof LocalizedError) {
+    const error = new Error(localizedMessage(err, t));
+    error.name = err.name;
+    return error;
+  }
   if (err instanceof CursorAgentError) return new Error(err.message);
   if (err instanceof Error) return err;
   return new Error(String(err));

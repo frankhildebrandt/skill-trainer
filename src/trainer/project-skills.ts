@@ -1,3 +1,4 @@
+import { LocalizedError } from "../shared/localized-error";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ProjectSkill } from "../shared/types";
@@ -16,7 +17,7 @@ export async function listProjectSkills(workspace: string): Promise<ProjectSkill
   const root = await fs.realpath(path.resolve(workspace));
   assertSafeWorkspace(root);
   const stat = await fs.stat(root);
-  if (!stat.isDirectory()) throw new Error("Der Projektpfad ist kein Ordner.");
+  if (!stat.isDirectory()) throw new LocalizedError("diagnostics.projectNotDirectory");
   const found: ProjectSkill[] = [];
   await walk(root, root, 0, found);
   found.sort((left, right) => left.relative.localeCompare(right.relative));

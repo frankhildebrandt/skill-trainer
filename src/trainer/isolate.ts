@@ -1,3 +1,4 @@
+import { LocalizedError } from "../shared/localized-error";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -24,7 +25,7 @@ export function assertSafeWorkspace(dir: string): void {
   const resolved = path.resolve(dir);
   const root = path.parse(resolved).root;
   if (resolved === root || resolved === path.resolve(os.homedir())) {
-    throw new Error("Dieser Ordner ist zu breit. Wähle den Projektordner, nicht dein Home-Verzeichnis.");
+    throw new LocalizedError("diagnostics.workspaceTooBroad");
   }
 }
 
@@ -168,9 +169,7 @@ async function cloneHeavyDirs(src: string, dest: string): Promise<void> {
         if (code === 0) resolve();
         else {
           reject(
-            new Error(
-              `Die Kopie von ${name} ist fehlgeschlagen (${code}). Der Lauf braucht eine eigene Kopie, kein Link auf dein Original.`,
-            ),
+            new LocalizedError("diagnostics.dependencyCopyFailed", { name, code: code ?? "null" }),
           );
         }
       });
@@ -197,7 +196,7 @@ function archiveHead(src: string, dest: string): Promise<void> {
     if (!git.stdout || !git.stderr || !tar.stdin || !tar.stderr) {
       git.kill();
       tar.kill();
-      reject(new Error("Die Projektkopie konnte nicht gestartet werden."));
+      reject(new LocalizedError("diagnostics.projectCopyStart"));
       return;
     }
     const errors: string[] = [];
@@ -226,7 +225,7 @@ function archiveHead(src: string, dest: string): Promise<void> {
     const finish = () => {
       if (gitCode === null || tarCode === null) return;
       if (gitCode === 0 && tarCode === 0) succeed();
-      else fail(new Error(errors.join("").trim() || `Die Projektkopie ist fehlgeschlagen (${gitCode}/${tarCode}).`));
+      else fail(errors.join("").trim() ? new Error(errors.join("").trim()) : new LocalizedError("diagnostics.projectCopyFailed", { gitCode, tarCode }));
     };
     git.on("error", (error) => fail(error));
     tar.on("error", (error) => fail(error));
@@ -285,7 +284,7 @@ function runGit(args: string[], cwd: string, extraEnv?: NodeJS.ProcessEnv): Prom
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve(stdout);
-      else reject(new Error(stderr.trim() || `git ${args[0]} ist fehlgeschlagen (${code})`));
+      else reject(stderr.trim() ? new Error(stderr.trim()) : new LocalizedError("diagnostics.gitFailed", { command: args[0] ?? "undefined", code: code ?? "null" }));
     });
   });
 }

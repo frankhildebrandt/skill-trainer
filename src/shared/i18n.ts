@@ -2,6 +2,9 @@ import { appMessages } from "./i18n/app";
 import { backendMessages } from "./i18n/backend";
 import { formMessages } from "./i18n/form";
 import { runsMessages } from "./i18n/runs";
+import { skillFileMessages } from "./i18n/skill-files";
+import { diagnosticMessages } from "./i18n/diagnostics";
+import { runnerMessages } from "./i18n/runner";
 import { SUPPORTED_LOCALES, type Locale } from "./i18n/types";
 
 export { SUPPORTED_LOCALES, type Locale } from "./i18n/types";
@@ -16,12 +19,12 @@ export const LANGUAGE_NAMES: Record<Locale, string> = {
 };
 
 export const messages = {
-  de: { ...appMessages.de, ...formMessages.de, ...runsMessages.de, ...backendMessages.de },
-  en: { ...appMessages.en, ...formMessages.en, ...runsMessages.en, ...backendMessages.en },
-  fr: { ...appMessages.fr, ...formMessages.fr, ...runsMessages.fr, ...backendMessages.fr },
-  it: { ...appMessages.it, ...formMessages.it, ...runsMessages.it, ...backendMessages.it },
-  es: { ...appMessages.es, ...formMessages.es, ...runsMessages.es, ...backendMessages.es },
-  nl: { ...appMessages.nl, ...formMessages.nl, ...runsMessages.nl, ...backendMessages.nl },
+  de: { ...appMessages.de, ...formMessages.de, ...runsMessages.de, ...backendMessages.de, ...skillFileMessages.de, ...diagnosticMessages.de, ...runnerMessages.de },
+  en: { ...appMessages.en, ...formMessages.en, ...runsMessages.en, ...backendMessages.en, ...skillFileMessages.en, ...diagnosticMessages.en, ...runnerMessages.en },
+  fr: { ...appMessages.fr, ...formMessages.fr, ...runsMessages.fr, ...backendMessages.fr, ...skillFileMessages.fr, ...diagnosticMessages.fr, ...runnerMessages.fr },
+  it: { ...appMessages.it, ...formMessages.it, ...runsMessages.it, ...backendMessages.it, ...skillFileMessages.it, ...diagnosticMessages.it, ...runnerMessages.it },
+  es: { ...appMessages.es, ...formMessages.es, ...runsMessages.es, ...backendMessages.es, ...skillFileMessages.es, ...diagnosticMessages.es, ...runnerMessages.es },
+  nl: { ...appMessages.nl, ...formMessages.nl, ...runsMessages.nl, ...backendMessages.nl, ...skillFileMessages.nl, ...diagnosticMessages.nl, ...runnerMessages.nl },
 };
 
 export type TranslationKey = keyof typeof messages.de;

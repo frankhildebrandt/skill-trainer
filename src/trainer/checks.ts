@@ -1,3 +1,4 @@
+import { LocalizedError } from "../shared/localized-error";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -17,20 +18,20 @@ export interface CheckFile {
 }
 
 export function assertChecks(files: CheckFile[]): void {
-  if (files.length > MAX_FILES) throw new Error(`Das Testskript hat mehr als ${MAX_FILES} Dateien.`);
+  if (files.length > MAX_FILES) throw new LocalizedError("diagnostics.tooManyCheckFiles", { count: MAX_FILES });
   let total = 0;
   let entry = "";
   for (const file of files) {
     const relative = normalizeCheckPath(file.path);
-    if (!relative) throw new Error(`Prüfdatei liegt außerhalb von ${CHECKS_DIR}: ${file.path}`);
+    if (!relative) throw new LocalizedError("diagnostics.checkOutside", { directory: CHECKS_DIR, path: file.path });
     if (relative === CHECK_ENTRY) entry = file.text;
-    if (file.text.includes("\0")) throw new Error(`${relative} ist keine Textdatei.`);
-    if (file.text.length > MAX_FILE_CHARS) throw new Error(`${relative} ist zu lang.`);
+    if (file.text.includes("\0")) throw new LocalizedError("diagnostics.notTextFile", { path: relative });
+    if (file.text.length > MAX_FILE_CHARS) throw new LocalizedError("diagnostics.fileTooLong", { path: relative });
     total += file.text.length;
   }
-  if (entry === "") throw new Error(`Der Agent hat kein ${CHECK_ENTRY} geschrieben.`);
-  if (!entry.trim()) throw new Error("run.sh ist leer.");
-  if (total > MAX_TOTAL_CHARS) throw new Error("Das Testskript ist größer als 400 KB.");
+  if (entry === "") throw new LocalizedError("diagnostics.missingCheckEntry", { path: CHECK_ENTRY });
+  if (!entry.trim()) throw new LocalizedError("diagnostics.emptyCheck");
+  if (total > MAX_TOTAL_CHARS) throw new LocalizedError("diagnostics.checkTooLarge");
 }
 
 export async function harvestChecks(root: string): Promise<CheckFile[]> {
@@ -48,11 +49,11 @@ export async function plantChecks(root: string, files: CheckFile[]): Promise<voi
   await fs.rm(dir, { recursive: true, force: true });
   for (const file of files) {
     const relative = normalizeCheckPath(file.path);
-    if (!relative) throw new Error(`Prüfdatei liegt außerhalb von ${CHECKS_DIR}: ${file.path}`);
+    if (!relative) throw new LocalizedError("diagnostics.checkOutside", { directory: CHECKS_DIR, path: file.path });
     const target = path.resolve(root, relative);
     const allowed = path.resolve(root, CHECKS_DIR);
     if (target !== allowed && !target.startsWith(allowed + path.sep)) {
-      throw new Error(`Prüfdatei liegt außerhalb von ${CHECKS_DIR}: ${file.path}`);
+      throw new LocalizedError("diagnostics.checkOutside", { directory: CHECKS_DIR, path: file.path });
     }
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, file.text);

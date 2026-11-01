@@ -2,6 +2,8 @@ import type { Translations } from "./types";
 
 const de = {
   "app.language": "Sprache",
+  "app.localeSaveError": "Die Sprachwahl konnte nicht gespeichert werden. Bitte wähle die Sprache erneut.",
+  "app.retry": "Erneut versuchen",
   "app.fallback": "Skill Trainer läuft nur in der Electron-App.",
   "app.trainings": "Trainings",
   "app.trainingNumber": "Training {n}",
@@ -93,6 +95,8 @@ export const appMessages = {
   de,
   en: {
   "app.language": "Language",
+  "app.localeSaveError": "The language choice could not be saved. Please select the language again.",
+  "app.retry": "Retry",
   "app.fallback": "Skill Trainer only runs in the Electron app.",
   "app.trainings": "Training sessions",
   "app.trainingNumber": "Training {n}",
@@ -181,6 +185,8 @@ export const appMessages = {
 },
   fr: {
   "app.language": "Langue",
+  "app.localeSaveError": "Le choix de la langue n’a pas pu être enregistré. Veuillez sélectionner à nouveau la langue.",
+  "app.retry": "Réessayer",
   "app.fallback": "Skill Trainer fonctionne uniquement dans l’application Electron.",
   "app.trainings": "Sessions d’entraînement",
   "app.trainingNumber": "Entraînement {n}",
@@ -269,6 +275,8 @@ export const appMessages = {
 },
   it: {
   "app.language": "Lingua",
+  "app.localeSaveError": "Non è stato possibile salvare la lingua scelta. Seleziona nuovamente la lingua.",
+  "app.retry": "Riprova",
   "app.fallback": "Skill Trainer funziona solo nell’app Electron.",
   "app.trainings": "Sessioni di addestramento",
   "app.trainingNumber": "Addestramento {n}",
@@ -357,6 +365,8 @@ export const appMessages = {
 },
   es: {
   "app.language": "Idioma",
+  "app.localeSaveError": "No se ha podido guardar el idioma elegido. Vuelve a seleccionar el idioma.",
+  "app.retry": "Reintentar",
   "app.fallback": "Skill Trainer solo funciona en la aplicación Electron.",
   "app.trainings": "Sesiones de entrenamiento",
   "app.trainingNumber": "Entrenamiento {n}",
@@ -445,6 +455,8 @@ export const appMessages = {
 },
   nl: {
   "app.language": "Taal",
+  "app.localeSaveError": "De taalkeuze kon niet worden opgeslagen. Selecteer de taal opnieuw.",
+  "app.retry": "Opnieuw proberen",
   "app.fallback": "Skill Trainer werkt alleen in de Electron-app.",
   "app.trainings": "Trainingssessies",
   "app.trainingNumber": "Training {n}",

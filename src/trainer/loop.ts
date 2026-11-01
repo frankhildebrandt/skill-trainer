@@ -1,3 +1,4 @@
+import { localizedMessage } from "../shared/localized-error";
 import { translate, type Translate } from "../shared/i18n";
 import { learningRateAt } from "../shared/estimate";
 import { aggregate, isImprovement } from "../shared/score";
@@ -161,7 +162,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         auftrag: config.auftrag,
         signal: config.signal,
       });
-      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: rate, budget: config.budget });
+      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: rate, budget: config.budget, translate: t });
       if (report.applied.length === 0 && report.appliedFiles.length === 0) {
         const skipped: StepRecord = {
           index: step + 1,
@@ -250,7 +251,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
         auftrag: config.auftrag,
         signal: config.signal,
       });
-      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: 1, budget: config.budget, slow: true });
+      const report = applyProposal({ skill: current, files: currentFiles, proposal, learningRate: 1, budget: config.budget, slow: true, translate: t });
       const candidate = report.skill;
       if (candidate === current && report.appliedFiles.length === 0) {
         const skipped: StepRecord = {
@@ -316,7 +317,7 @@ export async function trainSkill(config: TrainLoopConfig, deps: TrainerDeps): Pr
       cancelled = true;
       deps.emit({ type: "log", message: t("trainer.cancelledBest") });
     } else {
-      error = err instanceof Error ? err.message : String(err);
+      error = localizedMessage(err, t);
       deps.emit({ type: "error", message: error });
     }
   }

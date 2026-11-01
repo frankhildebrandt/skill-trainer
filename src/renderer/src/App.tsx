@@ -104,8 +104,9 @@ const EMPTY: TrainRequest = {
 };
 
 export function App() {
-  const { locale, setLocale, t } = useI18n();
+  const { locale, setLocale, t, saveError } = useI18n();
   const api = window.trainer;
+  const [loggingIn, setLoggingIn] = useState(false);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [models, setModels] = useState<ModelOption[]>([{ id: "composer-2.5", label: "Composer 2.5" }]);
   const [tabs, setTabs] = useState<TrainingTab[]>([]);
@@ -192,7 +193,7 @@ export function App() {
   }
 
   async function login() {
-    setAuth({ state: "logged-out", email: null, via: "none", message: t("app.browserOpen") });
+    setLoggingIn(true);
     try {
       const next = await api.authLogin();
       setAuth(next);
@@ -200,12 +201,20 @@ export function App() {
       if (listed.models.length > 0) setModels(listed.models);
     } catch (err) {
       setAuth({ state: "error", email: null, via: "none", message: messageOf(err) });
+    } finally {
+      setLoggingIn(false);
     }
   }
 
   return (
     <div className={runningCount > 0 ? "app is-running" : "app"}>
       <Backdrop />
+      {saveError ? (
+        <div className="locale-save-error" role="alert">
+          <span>{t("app.localeSaveError")}</span>
+          <button type="button" onClick={() => setLocale(locale)}>{t("app.retry")}</button>
+        </div>
+      ) : null}
       <header className="titlebar">
         <div className="brand">
           <BrandMark />
@@ -269,11 +278,11 @@ export function App() {
             ) : null}
           </div>
           <div className="auth">
-            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={authLabel(auth, t)}>
+            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}>
               <span className="pill-dot" aria-hidden="true" />
-              {authLabel(auth, t)}
+              {(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}
             </span>
-            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0}>
+            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0 || loggingIn}>
               {t("app.login")}
             </button>
           </div>

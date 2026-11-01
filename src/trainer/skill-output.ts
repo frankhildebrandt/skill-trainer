@@ -1,3 +1,4 @@
+import { LocalizedError } from "../shared/localized-error";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { SkillFile } from "../shared/types";
@@ -15,17 +16,17 @@ interface SkillOutput {
 export async function saveSkillOutput(input: SkillOutput): Promise<{ backupPath: string | null; skillPath: string }> {
   validateFiles(input.files);
   const requested = path.resolve(input.destination);
-  if (requested === path.parse(requested).root) throw new Error("Der Skill-Zielordner darf kein Dateisystem-Stammordner sein.");
+  if (requested === path.parse(requested).root) throw new LocalizedError("diagnostics.destinationRoot");
   const parent = path.dirname(requested);
   await fs.mkdir(parent, { recursive: true });
   const destination = path.join(await fs.realpath(parent), path.basename(requested));
   const original = await statOrMissing(destination);
-  if (original?.isSymbolicLink()) throw new Error("Der Skill-Zielordner darf kein symbolischer Link sein.");
-  if (input.create && original) throw new Error("Der Zielordner existiert schon. Wähle einen neuen Skill-Ordner.");
-  if (!input.create && !original?.isDirectory()) throw new Error("Der Skill-Zielordner existiert nicht.");
+  if (original?.isSymbolicLink()) throw new LocalizedError("diagnostics.destinationSymlink");
+  if (input.create && original) throw new LocalizedError("diagnostics.destinationExists");
+  if (!input.create && !original?.isDirectory()) throw new LocalizedError("diagnostics.destinationMissing");
   const originalFiles = input.originalFiles ?? (input.create ? [] : (await loadSkillBundle(destination)).files);
   if (!input.stamp || input.stamp.includes("/") || input.stamp.includes("\\")) {
-    throw new Error("Ungültiger Backup-Zeitstempel.");
+    throw new LocalizedError("diagnostics.invalidBackupStamp");
   }
 
   const staging = await fs.mkdtemp(path.join(parent, ".skill-trainer-save-"));
@@ -73,7 +74,7 @@ async function updateStagedTree(root: string, files: SkillFile[], originals: Ski
     if (retained.has(relative)) continue;
     const target = await safeTarget(root, relative);
     const stat = await statOrMissing(target);
-    if (stat && !stat.isFile()) throw new Error(`Die ehemalige Skill-Datei ist keine Datei: ${relative}`);
+    if (stat && !stat.isFile()) throw new LocalizedError("diagnostics.originalNotFile", { path: relative });
     if (stat) {
       await fs.unlink(target);
       await pruneEmptyParents(root, path.dirname(target));
@@ -83,7 +84,7 @@ async function updateStagedTree(root: string, files: SkillFile[], originals: Ski
     const relative = relativePath(file.path);
     const target = await safeTarget(root, relative);
     if (!managed.has(relative) && await statOrMissing(target)) {
-      throw new Error(`Die neue Skill-Datei würde eine andere Datei überschreiben: ${relative}`);
+      throw new LocalizedError("diagnostics.unrelatedOverwrite", { path: relative });
     }
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, file.base64 !== undefined ? Buffer.from(file.base64, "base64") : file.text ?? "");
@@ -110,16 +111,16 @@ async function pruneEmptyParents(root: string, directory: string): Promise<void>
 
 function validateFiles(files: SkillFile[]): void {
   if (!files.some((file) => file.path === "SKILL.md" && file.text?.trim())) {
-    throw new Error("Der Skill braucht eine nicht leere SKILL.md.");
+    throw new LocalizedError("diagnostics.emptySkill");
   }
   const paths = files.map((file) => relativePath(file.path));
-  if (new Set(paths).size !== paths.length) throw new Error("Der Skill enthält doppelte Dateipfade.");
+  if (new Set(paths).size !== paths.length) throw new LocalizedError("diagnostics.duplicatePaths");
 }
 
 function relativePath(input: string): string {
   const relative = sanitizeRelative(input);
   if (!relative || relative.split("/").some((part) => part === "." || part.toLowerCase() === ".git")) {
-    throw new Error(`Ungültiger Skill-Dateipfad: ${input}`);
+    throw new LocalizedError("diagnostics.invalidSkillPath", { path: input });
   }
   return relative;
 }
@@ -130,12 +131,12 @@ async function safeTarget(root: string, relative: string): Promise<string> {
   for (const [index, part] of parts.entries()) {
     current = path.join(current, part);
     const stat = await statOrMissing(current);
-    if (stat?.isSymbolicLink()) throw new Error(`Symbolische Links im Skill-Zielpfad sind nicht erlaubt: ${relative}`);
+    if (stat?.isSymbolicLink()) throw new LocalizedError("diagnostics.targetPathSymlink", { path: relative });
     if (stat && index < parts.length - 1 && !stat.isDirectory()) {
-      throw new Error(`Der Skill-Zielpfad ist kein Ordner: ${relative}`);
+      throw new LocalizedError("diagnostics.targetNotDirectory", { path: relative });
     }
     if (stat && index === parts.length - 1 && !stat.isFile()) {
-      throw new Error(`Der Skill-Zielpfad ist keine Datei: ${relative}`);
+      throw new LocalizedError("diagnostics.targetNotFile", { path: relative });
     }
   }
   return current;

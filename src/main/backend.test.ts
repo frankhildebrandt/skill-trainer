@@ -212,3 +212,12 @@ describe("language preferences IPC", () => {
     expect(mocks.saveDialog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ title: "Definir la nueva carpeta del skill", buttonLabel: "Elegir destino" }));
   });
 });
+
+
+describe("localized diagnostic IPC", () => {
+  it("resolves low-level skill errors in the saved UI language before IPC serialization", async () => {
+    await mocks.handlers.get("locale:save")!(null, "fr");
+    await expect(mocks.handlers.get("skill:read")!(null, path.join(root, "missing-skill")))
+      .rejects.toThrow("Le chemin du skill n’existe pas.");
+  });
+});

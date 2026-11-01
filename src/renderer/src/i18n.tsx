@@ -5,6 +5,7 @@ interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   t: Translate;
+  saveError: boolean;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -12,6 +13,8 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, updateLocale] = useState<Locale>(() => resolveLocale(navigator.languages));
   const revision = useRef(0);
+  const pending = useRef<{ locale: Locale; revision: number } | null>(null);
+  const [saveError, setSaveError] = useState(false);
   const saveQueue = useRef(Promise.resolve());
 
   useEffect(() => {
@@ -25,7 +28,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     const initialRevision = revision.current;
     const unsubscribe = api.onLocaleChange((next) => {
       if (isLocale(next)) {
-        revision.current += 1;
+        // An older save may echo while a newer manual selection is still queued.
+        if (pending.current && next !== pending.current.locale) return;
+        if (!pending.current) revision.current += 1;
         updateLocale(next);
       }
     });
@@ -42,17 +47,27 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     locale,
     setLocale: (next) => {
       if (!isLocale(next)) return;
-      revision.current += 1;
+      const requestRevision = ++revision.current;
+      pending.current = { locale: next, revision: requestRevision };
+      setSaveError(false);
       updateLocale(next);
       const api = window.trainer;
       if (api) {
         // Keep rapid changes in order, including writes to the shared preferences file.
         saveQueue.current = saveQueue.current.catch(() => undefined).then(() => api.saveLocale(next));
-        void saveQueue.current.catch(() => undefined);
+        void saveQueue.current.then(() => {
+          if (pending.current?.revision === requestRevision) pending.current = null;
+        }).catch(() => {
+          if (pending.current?.revision === requestRevision) {
+            pending.current = null;
+            setSaveError(true);
+          }
+        });
       }
     },
     t: (key, values) => translate(locale, key, values),
-  }), [locale]);
+    saveError,
+  }), [locale, saveError]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

@@ -29,7 +29,7 @@ export async function prepareSkillDraft(
     emptyGate: config.gateOnEmptyRepo, skillScope: config.skillScope, auftrag: config.auftrag, signal,
   });
   throwIfAborted(signal);
-  const candidate = applyProposal({ skill, files: bundle.files, proposal, learningRate: config.learningRate, budget: config.budget });
+  const candidate = applyProposal({ skill, files: bundle.files, proposal, learningRate: config.learningRate, budget: config.budget, translate: t });
   if (sameBundle(skill, candidate.skill, bundle.files.length ? bundle.files : [{ path: "SKILL.md", text: skill }], candidate.files)) {
     throw new Error(t("trainer.unchangedDraft"));
   }
