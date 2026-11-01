@@ -17,6 +17,7 @@ const api: TrainerApi = {
   pickSkillDestination: () => ipcRenderer.invoke("dialog:skill-destination"),
   pickFolder: () => ipcRenderer.invoke("dialog:folder"),
   listProjectSkills: (workspacePath) => ipcRenderer.invoke("skills:list", workspacePath),
+  deriveSkillFields: (skillPath, model) => ipcRenderer.invoke("skill:derive", skillPath, model),
   readSkill: (skillPath) => ipcRenderer.invoke("skill:read", skillPath),
   loadSettings: () => ipcRenderer.invoke("settings:load"),
   saveSettings: (request: TrainRequest) => ipcRenderer.invoke("settings:save", request),

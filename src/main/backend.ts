@@ -11,7 +11,7 @@ import { readSavedLocale, writeSavedLocale } from "./locale-store";
 import { performAttempt } from "../trainer/attempt";
 import { CHECK_COMMAND, harvestChecks, plantChecks, writeChecks, type CheckFile } from "../trainer/checks";
 import { normalizeRequest } from "../trainer/config";
-import { executeAgent, isStartupError, proposeWithCursor } from "../trainer/cursor-runner";
+import { deriveSkillFields, executeAgent, isStartupError, proposeWithCursor } from "../trainer/cursor-runner";
 import { prepareSkillDraft } from "../trainer/draft";
 import { assertSafeWorkspace, createEmptyRepo, isolateWorkspace } from "../trainer/isolate";
 import { trainSkill, type AttemptCall, type TrainerDeps } from "../trainer/loop";
@@ -124,6 +124,20 @@ export function registerBackend(): void {
   handle("settings:load", () => readSavedSettings());
   handle("settings:save", async (_event, request: TrainRequest) => {
     await writeSavedSettings(request);
+  });
+  handle("skill:derive", async (_event, skillPath: unknown, modelId: unknown) => {
+    const model = String(modelId ?? "").trim();
+    if (!model) throw new Error(t("runner.noModel"));
+    const bundle = await loadSkillBundle(String(skillPath ?? ""));
+    const controller = new AbortController();
+    return deriveSkillFields({
+      locale: currentLocale,
+      translate: t,
+      model,
+      skill: bundle.document,
+      files: bundle.files,
+      signal: controller.signal,
+    });
   });
   handle("skill:read", async (_event, skillPath: string) => {
     const bundle = await loadSkillBundle(skillPath);
@@ -590,7 +604,7 @@ function summarize(summary: SessionSummary): unknown {
 function explain(err: unknown): Error {
   if (err instanceof LocalizedError) {
     const error = new Error(localizedMessage(err, t));
-    error.name = err.name;
+    if (err.name === "AbortError" || err.name === "TimeoutError") error.name = err.name;
     return error;
   }
   if (err instanceof CursorAgentError) return new Error(err.message);

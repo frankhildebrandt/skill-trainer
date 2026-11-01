@@ -1,9 +1,10 @@
+import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { translate, type Locale } from "../shared/i18n";
-import { Agent, CursorAgentError, type ConversationTurn, type SDKAgentInfo } from "@cursor/sdk";
+import { Agent, type ConversationTurn, type SDKAgentInfo } from "@cursor/sdk";
 import {
   cursorProjectSlug,
   dedupeRuns,
@@ -66,7 +67,7 @@ export async function listRepoRuns(
     try {
       return await readCheckoutTranscripts(checkout, deps.projectsRoot);
     } catch (err) {
-      warnings.push(translate(locale, "runs.localRunsError", { checkout: path.basename(checkout), message: messageOf(err) }));
+      warnings.push(translate(locale, "runs.localRunsError", { checkout: path.basename(checkout), message: messageOf(err, locale) }));
       return [];
     }
   }))).flat() : [];
@@ -81,7 +82,7 @@ export async function listRepoRuns(
           localSdk.push(...agentRuns(agent, messages, "local", path.basename(checkout)));
         }
       } catch (err) {
-        warnings.push(translate(locale, "runs.localAgentsError", { checkout: path.basename(checkout), message: messageOf(err) }));
+        warnings.push(translate(locale, "runs.localAgentsError", { checkout: path.basename(checkout), message: messageOf(err, locale) }));
       }
     }
   }
@@ -93,7 +94,7 @@ export async function listRepoRuns(
     try {
       cloud = await cloudRunsForRemotes(repo.remotes, deps, warnings, locale);
     } catch (err) {
-      warnings.push(translate(locale, "runs.cloudError", { message: messageOf(err) }));
+      warnings.push(translate(locale, "runs.cloudError", { message: messageOf(err, locale) }));
     }
   }
 
@@ -191,7 +192,7 @@ async function cloudRunsForRemotes(remotes: string[], deps: RepoRunDeps, warning
         runs.push(...fromRun.map((item, index) => ({ ...item, id: `${run.id}:${index}` })));
       }
     } catch (err) {
-      warnings.push(translate(locale, "runs.cloudAgentError", { agent: agent.name || agent.agentId, message: messageOf(err) }));
+      warnings.push(translate(locale, "runs.cloudAgentError", { agent: agent.name || agent.agentId, message: messageOf(err, locale) }));
     }
   });
   return runs;
@@ -337,13 +338,11 @@ function runGit(args: string[], cwd: string): Promise<string> {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve(stdout);
-      else reject(new Error(stderr.trim() || `git ${args[0]} ist fehlgeschlagen (${code})`));
+      else reject(stderr.trim() ? new Error(stderr.trim()) : new LocalizedError("runner.gitFailed", { command: args[0], code: code ?? "—" }));
     });
   });
 }
 
-function messageOf(err: unknown): string {
-  if (err instanceof CursorAgentError) return err.message;
-  if (err instanceof Error) return err.message;
-  return String(err);
+function messageOf(err: unknown, locale: Locale): string {
+  return localizedMessage(err, (key, values) => translate(locale, key, values));
 }

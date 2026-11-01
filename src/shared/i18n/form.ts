@@ -1,6 +1,12 @@
 import type { Translations } from "./types";
 
 const de = {
+  "form.fromSkill": "Aus dem Skill",
+  "form.analyzing": "Analysiert…",
+  "form.fillWithModel": "Mit Modell füllen",
+  "form.deriveTitle": "{model} liest den Skill und schreibt Ziel und Auftrag",
+  "form.chooseSkillFirst": "Zuerst einen Skill wählen",
+  "form.deriveHint": "{model} liest den gewählten Skill und schreibt Ziel und Auftrag.",
   "form.workflow": "Workflow",
   "form.fineTune": "Fine-Tuning",
   "form.pretrain": "Vortraining",
@@ -71,6 +77,12 @@ const de = {
 export const formMessages = {
   de,
   en: {
+    "form.fromSkill": "From the skill",
+    "form.analyzing": "Analyzing…",
+    "form.fillWithModel": "Fill using model",
+    "form.deriveTitle": "{model} reads the skill and writes the goal and task",
+    "form.chooseSkillFirst": "Choose a skill first",
+    "form.deriveHint": "{model} reads the selected skill and writes the goal and task.",
     "form.workflow": "Workflow",
     "form.fineTune": "Fine-tuning",
     "form.pretrain": "Pretraining",
@@ -138,6 +150,12 @@ export const formMessages = {
     "form.resizeHint": "{label} · drag to resize, double-click to reset"
   },
   fr: {
+    "form.fromSkill": "À partir de la compétence",
+    "form.analyzing": "Analyse en cours…",
+    "form.fillWithModel": "Remplir avec le modèle",
+    "form.deriveTitle": "{model} lit la compétence et rédige l’objectif et la tâche",
+    "form.chooseSkillFirst": "Choisissez d’abord une compétence",
+    "form.deriveHint": "{model} lit la compétence sélectionnée et rédige l’objectif et la tâche.",
     "form.workflow": "Processus",
     "form.fineTune": "Affinage",
     "form.pretrain": "Préentraînement",
@@ -205,6 +223,12 @@ export const formMessages = {
     "form.resizeHint": "{label} · faire glisser pour redimensionner, double-cliquer pour réinitialiser"
   },
   it: {
+    "form.fromSkill": "Dalla skill",
+    "form.analyzing": "Analisi in corso…",
+    "form.fillWithModel": "Compila con il modello",
+    "form.deriveTitle": "{model} legge la skill e scrive l’obiettivo e il compito",
+    "form.chooseSkillFirst": "Scegli prima una skill",
+    "form.deriveHint": "{model} legge la skill selezionata e scrive l’obiettivo e il compito.",
     "form.workflow": "Flusso di lavoro",
     "form.fineTune": "Ottimizzazione",
     "form.pretrain": "Preaddestramento",
@@ -272,6 +296,12 @@ export const formMessages = {
     "form.resizeHint": "{label} · trascina per ridimensionare, fai doppio clic per reimpostare"
   },
   es: {
+    "form.fromSkill": "Desde la habilidad",
+    "form.analyzing": "Analizando…",
+    "form.fillWithModel": "Rellenar con el modelo",
+    "form.deriveTitle": "{model} lee la habilidad y redacta el objetivo y la tarea",
+    "form.chooseSkillFirst": "Elige primero una habilidad",
+    "form.deriveHint": "{model} lee la habilidad seleccionada y redacta el objetivo y la tarea.",
     "form.workflow": "Flujo de trabajo",
     "form.fineTune": "Ajuste fino",
     "form.pretrain": "Preentrenamiento",
@@ -339,6 +369,12 @@ export const formMessages = {
     "form.resizeHint": "{label} · arrastra para cambiar el tamaño, haz doble clic para restablecer"
   },
   nl: {
+    "form.fromSkill": "Uit de skill",
+    "form.analyzing": "Analyseren…",
+    "form.fillWithModel": "Invullen met model",
+    "form.deriveTitle": "{model} leest de skill en schrijft het doel en de taak",
+    "form.chooseSkillFirst": "Kies eerst een skill",
+    "form.deriveHint": "{model} leest de geselecteerde skill en schrijft het doel en de taak.",
     "form.workflow": "Workflow",
     "form.fineTune": "Fijnafstemming",
     "form.pretrain": "Voortraining",

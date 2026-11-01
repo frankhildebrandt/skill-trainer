@@ -2,12 +2,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LocalizedError } from "../shared/localized-error";
 import type { SessionEvent, TrainRequest } from "../shared/types";
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => Promise<any>>(),
   userData: "",
   propose: vi.fn(),
+  derive: vi.fn(),
   verify: vi.fn(),
   attempt: vi.fn(),
   openDialog: vi.fn(),
@@ -19,7 +21,12 @@ vi.mock("electron", () => ({
   ipcMain: { handle: (name: string, fn: (...args: any[]) => Promise<any>) => mocks.handlers.set(name, fn) },
   dialog: { showOpenDialog: mocks.openDialog, showSaveDialog: mocks.saveDialog }, shell: {},
 }));
-vi.mock("../trainer/cursor-runner", () => ({ proposeWithCursor: mocks.propose, executeAgent: vi.fn(), isStartupError: () => false }));
+vi.mock("../trainer/cursor-runner", () => ({
+  proposeWithCursor: mocks.propose,
+  deriveSkillFields: mocks.derive,
+  executeAgent: vi.fn(),
+  isStartupError: () => false,
+}));
 vi.mock("../trainer/attempt", () => ({ performAttempt: mocks.attempt }));
 vi.mock("../trainer/verify", () => ({ runVerify: mocks.verify }));
 vi.mock("../trainer/isolate", () => ({
@@ -37,6 +44,7 @@ beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-session-"));
   mocks.userData = path.join(root, "sessions-data");
   mocks.propose.mockReset();
+  mocks.derive.mockReset();
   mocks.verify.mockReset();
   mocks.attempt.mockReset();
   mocks.openDialog.mockReset();
@@ -163,6 +171,21 @@ describe("skill workflow IPC", () => {
     expect(await fs.readFile(path.join(root, "new-skill", "SKILL.md"), "utf8")).toBe(document);
     expect(await fs.readFile(path.join(otherPath, "SKILL.md"), "utf8")).toBe(document);
   });
+
+  it("asks the selected model to fill goal and assignment from the skill", async () => {
+    const skill = path.join(root, "skills", "parser");
+    await fs.mkdir(skill, { recursive: true });
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: parser\ndescription: Parse logs.\n---\n\n# Parser\nRead the log format first.\n");
+    mocks.derive.mockResolvedValue({ ziel: "Logs zuverlässig lesen.", auftrag: "Parse logs/app.log zu einer Tabelle." });
+    const result = await mocks.handlers.get("skill:derive")!(null, skill, "composer-2.5");
+    expect(result).toEqual({ ziel: "Logs zuverlässig lesen.", auftrag: "Parse logs/app.log zu einer Tabelle." });
+    expect(mocks.derive).toHaveBeenCalledWith(expect.objectContaining({
+      model: "composer-2.5",
+      skill: expect.stringContaining("Read the log format first."),
+    }));
+    await expect(mocks.handlers.get("skill:derive")!(null, skill, "  ")).rejects.toThrow(/Modell/);
+    await expect(mocks.handlers.get("skill:derive")!(null, path.join(root, "missing"), "composer-2.5")).rejects.toThrow(/existiert nicht/);
+  });
 });
 
 
@@ -219,5 +242,24 @@ describe("localized diagnostic IPC", () => {
     await mocks.handlers.get("locale:save")!(null, "fr");
     await expect(mocks.handlers.get("skill:read")!(null, path.join(root, "missing-skill")))
       .rejects.toThrow("Le chemin du skill n’existe pas.");
+  });
+});
+
+
+describe("localized skill analysis IPC", () => {
+  it("passes the selected language to analysis and preserves the generated field values", async () => {
+    const skill = path.join(root, "parser");
+    await fs.mkdir(skill);
+    await fs.writeFile(path.join(skill, "SKILL.md"), document);
+    await mocks.handlers.get("locale:save")!(null, "nl");
+    const fields = { ziel: "Logbestanden lezen.", auftrag: "Zet logs/app.log om naar een tabel." };
+    mocks.derive.mockResolvedValue(fields);
+    expect(await mocks.handlers.get("skill:derive")!(null, skill, "composer-2.5")).toEqual(fields);
+    expect(mocks.derive).toHaveBeenCalledWith(expect.objectContaining({ locale: "nl", translate: expect.any(Function) }));
+    await expect(mocks.handlers.get("skill:derive")!(null, skill, ""))
+      .rejects.toThrow("Geen model geselecteerd.");
+    mocks.derive.mockRejectedValue(new LocalizedError("runner.analysisFailed"));
+    await expect(mocks.handlers.get("skill:derive")!(null, skill, "composer-2.5"))
+      .rejects.toThrow("Analyse mislukt.");
   });
 });

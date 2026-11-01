@@ -1,4 +1,4 @@
-import { translate, type Translate } from "../shared/i18n";
+import { translate, type Translate, type Locale, type TranslationKey } from "../shared/i18n";
 import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { Agent, CursorAgentError, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
 import fs from "node:fs/promises";
@@ -6,11 +6,13 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentTrace, ExecuteRequest } from "./attempt";
 import type { ActivityUpdate } from "../shared/run-log";
+import type { SkillFile } from "../shared/types";
 import { createActivitySink, describeSdkEvent, type ActivityEvent } from "./activity";
 import { extractJson, parseProposal, type Proposal } from "./json";
 import type { ProposeCall } from "./loop";
 import { buildOptimizerPrompt } from "./prompts";
 import { isAbortError } from "./pool";
+import { buildSkillFieldsPrompt, hasSkillFields, readSkillFields, type SkillFields } from "./skill-fields";
 
 export function isStartupError(err: unknown): boolean {
   return err instanceof CursorAgentError;
@@ -82,10 +84,37 @@ export async function proposeWithCursor(
   return parseProposal(extractJson(text));
 }
 
+/** Reads the selected skill with the chosen model and returns localized form fields. */
+export async function deriveSkillFields(input: {
+  model: string;
+  skill: string;
+  files: SkillFile[];
+  signal: AbortSignal;
+  locale?: Locale;
+  translate?: Translate;
+}): Promise<SkillFields> {
+  const t: Translate = input.translate ?? ((key, values) => translate(input.locale ?? "de", key, values));
+  const prompt = buildSkillFieldsPrompt({ skill: input.skill, files: input.files, locale: input.locale });
+  const text = await completeText(input.model, os.tmpdir(), prompt, input.signal, undefined, t, {
+    accept: hasSkillFields,
+    problem: (reply) => skillFieldsProblem(reply, t),
+    abortKey: "runner.analysisCancelled",
+    failureKey: "runner.analysisFailed",
+  });
+  return readSkillFields(text);
+}
+
 export async function makeOptimizerDir(sessionDir: string): Promise<string> {
   const root = path.join(sessionDir, "optimizer");
   await fs.mkdir(root, { recursive: true });
   return fs.mkdtemp(path.join(root, "call-"));
+}
+
+interface CompleteOptions {
+  accept?: (text: string) => boolean;
+  problem?: (text: string) => string;
+  abortKey?: TranslationKey;
+  failureKey?: TranslationKey;
 }
 
 async function completeText(
@@ -95,6 +124,7 @@ async function completeText(
   signal: AbortSignal,
   onActivity: ((update: ActivityUpdate) => void) | undefined,
   t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-trainer-opt-"));
   await fs.mkdir(dir, { recursive: true });
@@ -102,7 +132,7 @@ async function completeText(
     let last: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity, t);
+        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity, t, options);
       } catch (err) {
         last = err;
         if (attempt === 1 || signal.aborted || isAbortError(err) || !isStall(err)) throw err;
@@ -123,22 +153,26 @@ async function completeTextOnce(
   signal: AbortSignal,
   onActivity: ((update: ActivityUpdate) => void) | undefined,
   t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
+  const accept = options.accept ?? isProposal;
+  const problem = options.problem ?? ((text: string) => proposalProblem(text, t));
   const agent = await Agent.create({
     model: { id: model },
     tools: [],
     local: { cwd: dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
   });
   try {
-    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity, t);
-    if (isProposal(first)) return first;
-    onActivity?.({ op: "note", text: t("runner.retryProposal", { reason: proposalProblem(first, t) }) });
+    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity, t, options);
+    if (accept(first)) return first;
+    onActivity?.({ op: "note", text: t("runner.retryProposal", { reason: problem(first) }) });
     return await sendOnce(
       agent,
       "Your previous reply was not one JSON object. Reply with that JSON object only. Do not restate the analysis.",
       signal,
       onActivity,
       t,
+      options,
     );
   } finally {
     await agent[Symbol.asyncDispose]();
@@ -151,7 +185,9 @@ async function sendOnce(
   signal: AbortSignal,
   onActivity: ((update: ActivityUpdate) => void) | undefined,
   t: Translate,
+  options: CompleteOptions = {},
 ): Promise<string> {
+  const accept = options.accept ?? isProposal;
   const run = await agent.send(prompt);
   const cancel = () => {
     if (run.supports("cancel")) void run.cancel();
@@ -164,7 +200,7 @@ async function sendOnce(
     onActivity?.(update);
     if (proposal || update.op !== "append" || update.kind !== "text") return;
     assistant += update.text;
-    if (!isProposal(assistant)) return;
+    if (!accept(assistant)) return;
     proposal = assistant;
     onActivity?.({ op: "note", text: t("runner.proposalComplete") });
     if (!signal.aborted) cancel();
@@ -181,14 +217,23 @@ async function sendOnce(
   signal.removeEventListener("abort", cancel);
   if (proposal) return proposal;
   if (result.status === "cancelled") {
-    const error = new LocalizedError("runner.cancelled");
+    const error = new LocalizedError(options.abortKey ?? "runner.cancelled");
     error.name = "AbortError";
     throw error;
   }
   if (result.status === "error") {
-    throw result.error?.message ? new Error(result.error.message) : new LocalizedError("runner.failed");
+    throw result.error?.message ? new Error(result.error.message) : new LocalizedError(options.failureKey ?? "runner.failed");
   }
   return result.result ?? "";
+}
+
+function skillFieldsProblem(text: string, t: Translate): string {
+  try {
+    readSkillFields(text);
+    return t("runner.noFields");
+  } catch (err) {
+    return err instanceof Error ? localizedMessage(err, t) : t("runner.invalidFields");
+  }
 }
 
 function proposalProblem(text: string, t: Translate): string {

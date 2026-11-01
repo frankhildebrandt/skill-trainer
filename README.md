@@ -45,7 +45,7 @@ Während der Läufe bekommt der Agent den Skill-Text direkt in den Prompt und de
 
 Die Oberfläche unterstützt Deutsch, Englisch, Französisch, Italienisch, Spanisch und Niederländisch. Die Sprachwahl steht oben im Fenster und wirkt sofort, auch in der Lauf-Auswahl. Beim ersten Start wird die erste unterstützte Systemsprache verwendet, andernfalls Englisch. Eine manuell gewählte Sprache bleibt für spätere Starts gespeichert, unabhängig von den Trainingseinstellungen.
 
-Übersetzungen liegen unter `src/shared/i18n/`. Neue Texte bekommen dort einen Schlüssel mit Übersetzungen für alle sechs Sprachen. Aufträge, Skill-Inhalte und vom Agenten erzeugte Texte behalten ihre Originalsprache.
+Übersetzungen liegen unter `src/shared/i18n/`. Neue Texte bekommen dort einen Schlüssel mit Übersetzungen für alle sechs Sprachen. Datei-, Pfad-, Prüf- und Optimierer-Meldungen verwenden ebenfalls die gewählte Sprache. „Mit Modell füllen“ erstellt neue Ziel- und Auftragstexte in dieser Sprache. Vorhandene Aufträge, Skill-Inhalte und Agent-Antworten behalten ihre Originalsprache.
 
 ## Start
 
