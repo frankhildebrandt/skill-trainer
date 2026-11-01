@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => Promise<any>>(),
   userData: "",
   propose: vi.fn(),
+  derive: vi.fn(),
   verify: vi.fn(),
   attempt: vi.fn(),
 }));
@@ -16,7 +17,12 @@ vi.mock("electron", () => ({
   ipcMain: { handle: (name: string, fn: (...args: any[]) => Promise<any>) => mocks.handlers.set(name, fn) },
   dialog: {}, shell: {},
 }));
-vi.mock("../trainer/cursor-runner", () => ({ proposeWithCursor: mocks.propose, executeAgent: vi.fn(), isStartupError: () => false }));
+vi.mock("../trainer/cursor-runner", () => ({
+  proposeWithCursor: mocks.propose,
+  deriveSkillFields: mocks.derive,
+  executeAgent: vi.fn(),
+  isStartupError: () => false,
+}));
 vi.mock("../trainer/attempt", () => ({ performAttempt: mocks.attempt }));
 vi.mock("../trainer/verify", () => ({ runVerify: mocks.verify }));
 vi.mock("../trainer/isolate", () => ({
@@ -34,6 +40,7 @@ beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-session-"));
   mocks.userData = path.join(root, "sessions-data");
   mocks.propose.mockReset();
+  mocks.derive.mockReset();
   mocks.verify.mockReset();
   mocks.attempt.mockReset();
   events.length = 0;
@@ -155,5 +162,20 @@ describe("skill workflow IPC", () => {
     await writeBack("two");
     expect(await fs.readFile(path.join(root, "new-skill", "SKILL.md"), "utf8")).toBe(document);
     expect(await fs.readFile(path.join(otherPath, "SKILL.md"), "utf8")).toBe(document);
+  });
+
+  it("asks the selected model to fill goal and assignment from the skill", async () => {
+    const skill = path.join(root, "skills", "parser");
+    await fs.mkdir(skill, { recursive: true });
+    await fs.writeFile(path.join(skill, "SKILL.md"), "---\nname: parser\ndescription: Parse logs.\n---\n\n# Parser\nRead the log format first.\n");
+    mocks.derive.mockResolvedValue({ ziel: "Logs zuverlässig lesen.", auftrag: "Parse logs/app.log zu einer Tabelle." });
+    const result = await mocks.handlers.get("skill:derive")!(null, skill, "composer-2.5");
+    expect(result).toEqual({ ziel: "Logs zuverlässig lesen.", auftrag: "Parse logs/app.log zu einer Tabelle." });
+    expect(mocks.derive).toHaveBeenCalledWith(expect.objectContaining({
+      model: "composer-2.5",
+      skill: expect.stringContaining("Read the log format first."),
+    }));
+    await expect(mocks.handlers.get("skill:derive")!(null, skill, "  ")).rejects.toThrow(/Modell/);
+    await expect(mocks.handlers.get("skill:derive")!(null, path.join(root, "missing"), "composer-2.5")).rejects.toThrow(/existiert nicht/);
   });
 });

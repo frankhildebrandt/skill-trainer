@@ -4,11 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentTrace, ExecuteRequest } from "./attempt";
 import type { ActivityUpdate } from "../shared/run-log";
+import type { SkillFile } from "../shared/types";
 import { createActivitySink, describeSdkEvent, type ActivityEvent } from "./activity";
 import { extractJson, parseProposal, type Proposal } from "./json";
 import type { ProposeCall } from "./loop";
 import { buildOptimizerPrompt } from "./prompts";
 import { isAbortError } from "./pool";
+import { buildSkillFieldsPrompt, hasSkillFields, readSkillFields, type SkillFields } from "./skill-fields";
 
 export function isStartupError(err: unknown): boolean {
   return err instanceof CursorAgentError;
@@ -79,10 +81,32 @@ export async function proposeWithCursor(
   return parseProposal(extractJson(text));
 }
 
+/** Reads the selected skill with the chosen model and returns the form fields. */
+export async function deriveSkillFields(input: {
+  model: string;
+  skill: string;
+  files: SkillFile[];
+  signal: AbortSignal;
+}): Promise<SkillFields> {
+  const prompt = buildSkillFieldsPrompt({ skill: input.skill, files: input.files });
+  const text = await completeText(input.model, os.tmpdir(), prompt, input.signal, undefined, {
+    accept: hasSkillFields,
+    problem: skillFieldsProblem,
+    abortMessage: "Analyse abgebrochen",
+  });
+  return readSkillFields(text);
+}
+
 export async function makeOptimizerDir(sessionDir: string): Promise<string> {
   const root = path.join(sessionDir, "optimizer");
   await fs.mkdir(root, { recursive: true });
   return fs.mkdtemp(path.join(root, "call-"));
+}
+
+interface CompleteOptions {
+  accept?: (text: string) => boolean;
+  problem?: (text: string) => string;
+  abortMessage?: string;
 }
 
 async function completeText(
@@ -91,6 +115,7 @@ async function completeText(
   prompt: string,
   signal: AbortSignal,
   onActivity?: (update: ActivityUpdate) => void,
+  options?: CompleteOptions,
 ): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-trainer-opt-"));
   await fs.mkdir(dir, { recursive: true });
@@ -98,7 +123,7 @@ async function completeText(
     let last: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity);
+        return await completeTextOnce(model, dir, cwd, prompt, signal, onActivity, options);
       } catch (err) {
         last = err;
         if (attempt === 1 || signal.aborted || isAbortError(err) || !isStall(err)) throw err;
@@ -118,21 +143,26 @@ async function completeTextOnce(
   prompt: string,
   signal: AbortSignal,
   onActivity?: (update: ActivityUpdate) => void,
+  options?: CompleteOptions,
 ): Promise<string> {
+  const accept = options?.accept ?? isProposal;
+  const problem = options?.problem ?? proposalProblem;
   const agent = await Agent.create({
     model: { id: model },
     tools: [],
     local: { cwd: dir, settingSources: [], store: await agentStore(path.join(storeCwd, "hold")) },
   });
   try {
-    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity);
-    if (isProposal(first)) return first;
-    onActivity?.({ op: "note", text: `Zweiter Versuch im selben Lauf. ${proposalProblem(first)}` });
+    const first = await sendOnce(agent, `${prompt}\n\nReply with the JSON object only.`, signal, onActivity, accept, options?.abortMessage);
+    if (accept(first)) return first;
+    onActivity?.({ op: "note", text: `Zweiter Versuch im selben Lauf. ${problem(first)}` });
     return await sendOnce(
       agent,
       "Your previous reply was not one JSON object. Reply with that JSON object only. Do not restate the analysis.",
       signal,
       onActivity,
+      accept,
+      options?.abortMessage,
     );
   } finally {
     await agent[Symbol.asyncDispose]();
@@ -143,7 +173,9 @@ async function sendOnce(
   agent: { send: (message: string) => Promise<{ stream: () => AsyncIterable<SDKMessage>; supports: (feature: "cancel") => boolean; cancel: () => Promise<void> | void; wait: () => Promise<{ status: string; result?: string; error?: { message?: string } }> }> },
   prompt: string,
   signal: AbortSignal,
-  onActivity?: (update: ActivityUpdate) => void,
+  onActivity: ((update: ActivityUpdate) => void) | undefined,
+  accept: (text: string) => boolean,
+  abortMessage = "Optimierer abgebrochen",
 ): Promise<string> {
   const run = await agent.send(prompt);
   const cancel = () => {
@@ -157,7 +189,7 @@ async function sendOnce(
     onActivity?.(update);
     if (proposal || update.op !== "append" || update.kind !== "text") return;
     assistant += update.text;
-    if (!isProposal(assistant)) return;
+    if (!accept(assistant)) return;
     proposal = assistant;
     onActivity?.({ op: "note", text: "Der Vorschlag ist vollständig. Dieser Durchlauf endet hier, damit keine weitere Überlegung im selben Lauf startet." });
     if (!signal.aborted) cancel();
@@ -174,7 +206,7 @@ async function sendOnce(
   signal.removeEventListener("abort", cancel);
   if (proposal) return proposal;
   if (result.status === "cancelled") {
-    const error = new Error("Optimierer abgebrochen");
+    const error = new Error(abortMessage);
     error.name = "AbortError";
     throw error;
   }
@@ -182,6 +214,15 @@ async function sendOnce(
     throw new Error(result.error?.message ?? "Optimierer-Lauf ist fehlgeschlagen.");
   }
   return result.result ?? "";
+}
+
+function skillFieldsProblem(text: string): string {
+  try {
+    readSkillFields(text);
+    return "Die erste Antwort enthielt kein Ziel und keinen Auftrag.";
+  } catch (err) {
+    return err instanceof Error ? err.message : "Die erste Antwort war kein auswertbares JSON.";
+  }
 }
 
 function proposalProblem(text: string): string {

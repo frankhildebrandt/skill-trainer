@@ -201,6 +201,7 @@ export interface TrainerApi {
   pickSkillDestination: () => Promise<string | null>;
   pickFolder: () => Promise<string | null>;
   listProjectSkills: (workspacePath: string) => Promise<ProjectSkill[]>;
+  deriveSkillFields: (skillPath: string, model: string) => Promise<{ ziel: string; auftrag: string }>;
   readSkill: (skillPath: string) => Promise<{
     name: string;
     chars: number;
