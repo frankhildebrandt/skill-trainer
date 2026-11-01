@@ -206,62 +206,64 @@ export function App() {
           <BrandMark />
           <h1>Skill Trainer</h1>
         </div>
-        <div className="status" aria-live="polite">
-          {runningCount > 0 ? (
-            <span className="status-pill live">
-              <span className="pulse" aria-hidden="true" />
-              <span className="status-pill-num">{runningCount}</span>
-              {runningCount === 1 ? "Training läuft" : "Trainings laufen"}
-            </span>
-          ) : null}
+        <div className="global-tabs" role="tablist" aria-label="Trainings">
+          {tabs.map((tab) => {
+            const snapshot = snapshots[tab.id];
+            const selected = tab.id === activeId;
+            const tone = snapshot?.tone ?? "idle";
+            const label = snapshot?.label ?? `Training ${tab.ordinal}`;
+            const status = snapshot?.status ?? "bereit";
+            return (
+              <div key={tab.id} className={`global-tab ${tone}${selected ? " on" : ""}`}>
+                <button
+                  type="button"
+                  className="global-tab-main"
+                  role="tab"
+                  aria-selected={selected}
+                  title={`${label} · ${status}`}
+                  onClick={() => setActiveId(tab.id)}
+                >
+                  <span className="global-tab-mark" aria-hidden="true" />
+                  <span className="global-tab-copy">
+                    <span className="global-tab-label">{label}</span>
+                    <span className="global-tab-status">{status}</span>
+                  </span>
+                </button>
+                <button type="button" className="global-tab-x" aria-label={`${label} schließen`} title="Schließen" onClick={() => closeTab(tab.id)}>
+                  <CloseIcon />
+                </button>
+              </div>
+            );
+          })}
+          <div className="global-tabs-end">
+            <button type="button" className="global-tab-add" onClick={addTab} aria-label="+ Training" title="Training hinzufügen">
+              <PlusIcon />
+              <span className="global-tab-add-label">Training</span>
+            </button>
+          </div>
         </div>
-        <div className="auth">
-          <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={authLabel(auth)}>
-            <span className="pill-dot" aria-hidden="true" />
-            {authLabel(auth)}
-          </span>
-          <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0}>
-            Anmelden
-          </button>
+        <div className="titlebar-end">
+          <div className="status" aria-live="polite">
+            {runningCount > 0 ? (
+              <span className="status-pill live">
+                <span className="pulse" aria-hidden="true" />
+                <span className="status-pill-num">{runningCount}</span>
+                {runningCount === 1 ? "Training läuft" : "Trainings laufen"}
+              </span>
+            ) : null}
+          </div>
+          <div className="auth">
+            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={authLabel(auth)}>
+              <span className="pill-dot" aria-hidden="true" />
+              {authLabel(auth)}
+            </span>
+            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0}>
+              Anmelden
+            </button>
+          </div>
         </div>
         {runningCount > 0 ? <div className="beam" aria-hidden="true" /> : null}
       </header>
-      <div className="global-tabs" role="tablist" aria-label="Trainings">
-        {tabs.map((tab) => {
-          const snapshot = snapshots[tab.id];
-          const selected = tab.id === activeId;
-          const tone = snapshot?.tone ?? "idle";
-          const label = snapshot?.label ?? `Training ${tab.ordinal}`;
-          const status = snapshot?.status ?? "bereit";
-          return (
-            <div key={tab.id} className={`global-tab ${tone}${selected ? " on" : ""}`}>
-              <button
-                type="button"
-                className="global-tab-main"
-                role="tab"
-                aria-selected={selected}
-                title={`${label} · ${status}`}
-                onClick={() => setActiveId(tab.id)}
-              >
-                <span className="global-tab-mark" aria-hidden="true" />
-                <span className="global-tab-copy">
-                  <span className="global-tab-label">{label}</span>
-                  <span className="global-tab-status">{status}</span>
-                </span>
-              </button>
-              <button type="button" className="global-tab-x" aria-label={`${label} schließen`} title="Schließen" onClick={() => closeTab(tab.id)}>
-                <CloseIcon />
-              </button>
-            </div>
-          );
-        })}
-        <div className="global-tabs-end">
-          <button type="button" className="global-tab-add" onClick={addTab} aria-label="+ Training" title="Training hinzufügen">
-            <PlusIcon />
-            <span className="global-tab-add-label">Training</span>
-          </button>
-        </div>
-      </div>
       {tabs.map((tab) => (
         <TrainingSession
           key={tab.id}
