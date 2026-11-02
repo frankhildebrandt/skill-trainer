@@ -10,6 +10,14 @@ const mocks = vi.hoisted(() => ({
   userData: "",
   propose: vi.fn(),
   derive: vi.fn(),
+  execute: vi.fn(),
+  compatibleModels: vi.fn(),
+  codexPropose: vi.fn(),
+  codexDerive: vi.fn(),
+  codexExecute: vi.fn(),
+  codexAuth: vi.fn(),
+  codexLogin: vi.fn(),
+  codexModels: vi.fn(),
   verify: vi.fn(),
   attempt: vi.fn(),
   openDialog: vi.fn(),
@@ -24,9 +32,20 @@ vi.mock("electron", () => ({
 vi.mock("../trainer/cursor-runner", () => ({
   proposeWithCursor: mocks.propose,
   deriveSkillFields: mocks.derive,
-  executeAgent: vi.fn(),
+  executeAgent: mocks.execute,
   isStartupError: () => false,
 }));
+vi.mock("../trainer/codex-runner", () => ({
+  proposeWithCodex: mocks.codexPropose,
+  deriveFieldsWithCodex: mocks.codexDerive,
+  executeWithCodex: mocks.codexExecute,
+}));
+vi.mock("./codex-provider", () => ({
+  readCodexAuth: mocks.codexAuth,
+  loginCodex: mocks.codexLogin,
+  listCodexModels: mocks.codexModels,
+}));
+vi.mock("../trainer/openai-runner", () => ({ listCompatibleModels: mocks.compatibleModels }));
 vi.mock("../trainer/attempt", () => ({ performAttempt: mocks.attempt }));
 vi.mock("../trainer/verify", () => ({ runVerify: mocks.verify }));
 vi.mock("../trainer/isolate", () => ({
@@ -45,6 +64,14 @@ beforeEach(async () => {
   mocks.userData = path.join(root, "sessions-data");
   mocks.propose.mockReset();
   mocks.derive.mockReset();
+  mocks.execute.mockReset();
+  mocks.compatibleModels.mockReset();
+  mocks.codexPropose.mockReset();
+  mocks.codexDerive.mockReset();
+  mocks.codexExecute.mockReset();
+  mocks.codexAuth.mockReset();
+  mocks.codexLogin.mockReset();
+  mocks.codexModels.mockReset();
   mocks.verify.mockReset();
   mocks.attempt.mockReset();
   mocks.openDialog.mockReset();
@@ -57,7 +84,10 @@ beforeEach(async () => {
   attachWindow({ on: () => undefined, isDestroyed: () => false, webContents: { send: (_name: string, event: SessionEvent) => events.push(event) } } as never);
 });
 
-afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  await fs.rm(root, { recursive: true, force: true });
+});
 
 function request(overrides: Partial<TrainRequest> = {}): TrainRequest {
   return { workflow: "create", trainAfterDraft: false, skillName: "parser-helper", skillBrief: "Prepare parser procedures.",
@@ -276,15 +306,125 @@ describe("localized skill analysis IPC", () => {
   });
 });
 
+describe("Codex inference provider IPC", () => {
+  it("uses Codex account and model endpoints and rejects unknown providers", async () => {
+    const auth = { state: "logged-in", email: "trainer@example.com", via: "login" };
+    const models = [{ id: "codex-model", label: "Codex model" }];
+    mocks.codexAuth.mockResolvedValue(auth);
+    mocks.codexLogin.mockResolvedValue(auth);
+    mocks.codexModels.mockResolvedValue(models);
+    await expect(mocks.handlers.get("auth:status")!(null, "codex")).resolves.toEqual(auth);
+    await expect(mocks.handlers.get("auth:login")!(null, "codex")).resolves.toEqual(auth);
+    await expect(mocks.handlers.get("models:list")!(null, "codex")).resolves.toEqual({ models });
+    expect(mocks.codexLogin).toHaveBeenCalledWith(expect.any(Function));
+    for (const channel of ["auth:status", "auth:login", "models:list"]) {
+      await expect(mocks.handlers.get(channel)!(null, "unknown")).rejects.toThrow("Unbekannter Inference-Anbieter");
+    }
+  });
 
-it("passes the saved provider to drafting and analysis without saving inline credentials", async () => {
-  const provider = { kind: "openrouter" as const, baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "OPENROUTER_API_KEY" };
-  mocks.propose.mockResolvedValue(proposal());
-  const result = await start(request({ provider }));
-  expect(mocks.propose).toHaveBeenCalledWith(expect.objectContaining({ provider }));
-  const saved = JSON.parse(await fs.readFile(path.join(result.sessionDir, "request.json"), "utf8"));
-  expect(saved.provider).toEqual(provider);
-  mocks.derive.mockResolvedValue({ ziel: "Goal", auftrag: "Task" });
-  await mocks.handlers.get("skill:derive")!(null, path.join(result.sessionDir, "best-skill"), "custom-model", provider);
-  expect(mocks.derive).toHaveBeenCalledWith(expect.objectContaining({ provider, model: "custom-model" }));
+  it("reports a missing Codex executable without offering Cursor models", async () => {
+    const missing = Object.assign(new Error("spawn codex ENOENT"), { code: "ENOENT" });
+    mocks.codexAuth.mockRejectedValue(missing);
+    mocks.codexModels.mockRejectedValue(missing);
+    await expect(mocks.handlers.get("auth:status")!(null, "codex")).resolves.toMatchObject({ state: "error", message: expect.stringContaining("Codex CLI wurde nicht gefunden") });
+    await expect(mocks.handlers.get("models:list")!(null, "codex")).resolves.toEqual({ models: [], error: expect.stringContaining("Codex CLI wurde nicht gefunden") });
+  });
+
+  it("uses Codex for skill analysis and draft generation and persists the provider", async () => {
+    const skillPath = path.join(root, "existing");
+    await fs.mkdir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), document);
+    const fields = { ziel: "Parse logs.", auftrag: "Create a parser." };
+    mocks.codexDerive.mockResolvedValue(fields);
+    await expect(mocks.handlers.get("skill:derive")!(null, skillPath, "codex-model", "codex")).resolves.toEqual(fields);
+    expect(mocks.codexDerive).toHaveBeenCalledWith(expect.objectContaining({ model: "codex-model", skill: document }));
+    expect(mocks.derive).not.toHaveBeenCalled();
+    mocks.codexPropose.mockResolvedValue(proposal());
+    const result = await start(request({ provider: { kind: "codex" }, targetModel: "codex-model", optimizerModel: "codex-optimizer" }));
+    expect(mocks.codexPropose).toHaveBeenCalledWith(expect.objectContaining({ model: "codex-optimizer", kind: "create" }));
+    expect(mocks.propose).not.toHaveBeenCalled();
+    expect(lastSummary().bestSkill).toBe(document);
+    expect(JSON.parse(await fs.readFile(path.join(result.sessionDir, "request.json"), "utf8")).provider).toMatchObject({ kind: "codex" });
+    expect(JSON.parse(await fs.readFile(path.join(mocks.userData, "settings.json"), "utf8")).provider).toMatchObject({ kind: "codex" });
+  });
+
+  it("routes test authoring, baseline, training and optimizer calls to Codex", async () => {
+    mocks.codexPropose.mockResolvedValueOnce(proposal()).mockResolvedValue({ reasoning: "Keep it.", edits: [], files: [], slow: null });
+    mocks.codexExecute.mockImplementation(async (input) => {
+      const checks = path.join(input.cwd, ".skill-trainer/checks");
+      await fs.mkdir(checks, { recursive: true });
+      await fs.writeFile(path.join(checks, "run.sh"), "#!/bin/sh\nexit 1\n");
+      return { status: "finished", finalText: "Authored", toolCalls: 1, transcript: "", durationMs: 1 };
+    });
+    mocks.verify.mockResolvedValue({ exitCode: 1, output: "not implemented" });
+    mocks.attempt.mockImplementation(async (input) => ({ runId: input.runId, phase: input.phase, ground: input.ground,
+      taskPrompt: input.taskPrompt, summary: "done", diffStat: "", keptWorkspace: null,
+      score: { hard: 1, soft: 1, gate: 1, verifyExitCode: 0, verifyOutput: "ok", toolCalls: 1, durationMs: 1, status: "finished" } }));
+    await start(request({ provider: { kind: "codex" }, trainAfterDraft: true, verifyMode: "agent", auftrag: "Implement the parser.", targetModel: "codex-model", optimizerModel: "codex-optimizer" }));
+    expect(lastSummary().error).toBeUndefined();
+    expect(mocks.codexExecute).toHaveBeenCalledWith(expect.objectContaining({ model: "codex-model", settingSources: [] }));
+    expect(mocks.attempt).toHaveBeenCalled();
+    for (const [input] of mocks.attempt.mock.calls) {
+      expect(input.execute).toBe(mocks.codexExecute);
+      expect(input.model).toBe("codex-model");
+    }
+    expect(mocks.codexPropose).toHaveBeenCalledWith(expect.objectContaining({ kind: "step", model: "codex-optimizer" }));
+    expect(mocks.propose).not.toHaveBeenCalled();
+  });
+});
+
+describe("compatible providers alongside Codex", () => {
+  it("loads endpoint model catalogs and reports credentials without starting a browser login", async () => {
+    const config = { kind: "openai", baseUrl: "https://example.test/v1", apiKeyEnv: "TRAINER_TEST_KEY" };
+    vi.stubEnv("TRAINER_TEST_KEY", "");
+    await expect(mocks.handlers.get("auth:status")!(null, config)).resolves.toMatchObject({ state: "logged-out", message: expect.stringContaining("TRAINER_TEST_KEY") });
+    vi.stubEnv("TRAINER_TEST_KEY", "test-key");
+    await expect(mocks.handlers.get("auth:login")!(null, config)).resolves.toMatchObject({ state: "logged-in", via: "env" });
+    await expect(mocks.handlers.get("auth:status")!(null, { kind: "ollama" })).resolves.toMatchObject({ state: "logged-in", via: "none" });
+    mocks.compatibleModels.mockResolvedValue([{ id: "endpoint-model", label: "Endpoint model" }]);
+    await expect(mocks.handlers.get("models:list")!(null, config)).resolves.toEqual({ models: [{ id: "endpoint-model", label: "Endpoint model" }] });
+    expect(mocks.compatibleModels).toHaveBeenCalledWith(config);
+    expect(mocks.codexAuth).not.toHaveBeenCalled();
+    expect(mocks.codexLogin).not.toHaveBeenCalled();
+    mocks.compatibleModels.mockRejectedValue(new Error("offline"));
+    await expect(mocks.handlers.get("models:list")!(null, config)).resolves.toEqual({ models: [], error: "offline" });
+  });
+
+  it("preserves endpoint configuration for analysis and optimization", async () => {
+    const provider = { kind: "ollama" as const, baseUrl: "http://localhost:11435/v1", apiKeyEnv: "" };
+    const skillPath = path.join(root, "existing");
+    await fs.mkdir(skillPath);
+    await fs.writeFile(path.join(skillPath, "SKILL.md"), document);
+    mocks.derive.mockResolvedValue({ ziel: "Parse logs.", auftrag: "Create a parser." });
+    await mocks.handlers.get("skill:derive")!(null, skillPath, "local-model", provider);
+    expect(mocks.derive).toHaveBeenCalledWith(expect.objectContaining({ provider, model: "local-model" }));
+    mocks.propose.mockResolvedValue(proposal());
+    await start(request({ provider, targetModel: "local-model", optimizerModel: "local-optimizer" }));
+    expect(mocks.propose).toHaveBeenCalledWith(expect.objectContaining({ provider, model: "local-optimizer" }));
+    expect(lastSummary().error).toBeUndefined();
+    expect(mocks.codexPropose).not.toHaveBeenCalled();
+    expect(mocks.codexDerive).not.toHaveBeenCalled();
+  });
+
+  it("passes endpoint configuration through check authoring and attempt callbacks", async () => {
+    const provider = { kind: "compatible" as const, baseUrl: "http://localhost:9000/v1", apiKeyEnv: "" };
+    mocks.propose.mockResolvedValueOnce(proposal()).mockResolvedValue({ reasoning: "Keep it.", edits: [], files: [], slow: null });
+    mocks.execute.mockImplementation(async (input) => {
+      const checks = path.join(input.cwd, ".skill-trainer/checks");
+      await fs.mkdir(checks, { recursive: true });
+      await fs.writeFile(path.join(checks, "run.sh"), "#!/bin/sh\nexit 1\n");
+      return { status: "finished", finalText: "Authored", toolCalls: 1, transcript: "", durationMs: 1 };
+    });
+    mocks.verify.mockResolvedValue({ exitCode: 1, output: "not implemented" });
+    mocks.attempt.mockImplementation(async (input) => {
+      await input.execute({ cwd: path.join(root, "attempt"), model: input.model, prompt: "task", signal: input.signal, timeoutMs: 1000 });
+      return { runId: input.runId, phase: input.phase, ground: input.ground, taskPrompt: input.taskPrompt, summary: "done", diffStat: "", keptWorkspace: null,
+        score: { hard: 1, soft: 1, gate: 1, verifyExitCode: 0, verifyOutput: "ok", toolCalls: 1, durationMs: 1, status: "finished" } };
+    });
+    await start(request({ provider, trainAfterDraft: true, verifyMode: "agent", auftrag: "Implement the parser.", targetModel: "local-model", optimizerModel: "local-optimizer" }));
+    expect(lastSummary().error).toBeUndefined();
+    expect(mocks.execute.mock.calls.length).toBeGreaterThan(1);
+    for (const [input] of mocks.execute.mock.calls) expect(input).toMatchObject({ provider, model: "local-model" });
+    expect(mocks.codexExecute).not.toHaveBeenCalled();
+  });
 });

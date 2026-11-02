@@ -1,3 +1,4 @@
+import { PROVIDERS, restoreProvider, type ProviderKind } from "@shared/provider";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LANGUAGE_NAMES, SUPPORTED_LOCALES, type Locale, type Translate } from "@shared/i18n";
 import { useI18n } from "./i18n";
@@ -73,11 +74,21 @@ interface TrainingTab {
   initialForm: TrainRequest;
 }
 
+type BuiltinProvider = "cursor" | "codex";
+const NO_MODELS: ModelOption[] = [];
+
+function isBuiltinProvider(kind: ProviderKind): kind is BuiltinProvider {
+  return kind === "cursor" || kind === "codex";
+}
+
+type ProviderCatalogs = Record<BuiltinProvider, { models: ModelOption[]; error?: string }>;
+
 function newTrainingTab(ordinal: number, form: TrainRequest): TrainingTab {
   return { id: crypto.randomUUID(), ordinal, initialForm: structuredClone(form) };
 }
 
 const EMPTY: TrainRequest = {
+  provider: { kind: "cursor" },
   workflow: "train",
   skillName: "",
   skillBrief: "",
@@ -106,23 +117,32 @@ const EMPTY: TrainRequest = {
 export function App() {
   const { locale, setLocale, t, saveError } = useI18n();
   const api = window.trainer;
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [models, setModels] = useState<ModelOption[]>([{ id: "composer-2.5", label: "Composer 2.5" }]);
+  const [loggingInFor, setLoggingInFor] = useState<BuiltinProvider | null>(null);
+  const [authByProvider, setAuthByProvider] = useState<Record<BuiltinProvider, AuthStatus | null>>({ cursor: null, codex: null });
+  const [catalogs, setCatalogs] = useState<ProviderCatalogs>({ cursor: { models: [{ id: "composer-2.5", label: "Composer 2.5" }] }, codex: { models: [] } });
   const [tabs, setTabs] = useState<TrainingTab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, TabSnapshot>>({});
   const ordinals = useRef(0);
+  const providerGenerations = useRef<Record<BuiltinProvider, number>>({ cursor: 0, codex: 0 });
 
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
-    void api.authStatus().then((status) => {
-      if (!cancelled) setAuth(status);
-    }).catch(() => undefined);
-    void api.listModels().then((result) => {
-      if (!cancelled && result.models.length > 0) setModels(result.models);
-    });
+    for (const provider of ["cursor", "codex"] as const) {
+      const generation = ++providerGenerations.current[provider];
+      const current = () => !cancelled && generation === providerGenerations.current[provider];
+      void api.authStatus({ kind: provider }).then((status) => {
+        if (current()) setAuthByProvider((prev) => ({ ...prev, [provider]: status }));
+      }).catch((error: unknown) => {
+        if (current()) setAuthByProvider((prev) => ({ ...prev, [provider]: { state: "error", email: null, via: "none", message: messageOf(error) } }));
+      });
+      void api.listModels({ kind: provider }).then((result) => {
+        if (current()) setCatalogs((prev) => ({ ...prev, [provider]: result }));
+      }).catch((error: unknown) => {
+        if (current()) setCatalogs((prev) => ({ ...prev, [provider]: { models: [], error: messageOf(error) } }));
+      });
+    }
     void api.loadSettings().then((saved) => {
       if (cancelled) return;
       const tab = newTrainingTab(++ordinals.current, saved ?? EMPTY);
@@ -144,6 +164,12 @@ export function App() {
   }
 
   const runningCount = Object.values(snapshots).filter((snapshot) => snapshot.running).length;
+  const activeForm = (activeId && snapshots[activeId]?.form) || tabs.find((tab) => tab.id === activeId)?.initialForm;
+  const provider = restoreProvider(activeForm?.provider);
+  const builtinProvider = isBuiltinProvider(provider.kind) ? provider.kind : null;
+  const providerLabel = PROVIDERS[provider.kind].label;
+  const auth = builtinProvider ? authByProvider[builtinProvider] : null;
+  const loggingIn = loggingInFor !== null && loggingInFor === builtinProvider;
   const loggedIn = auth?.state === "logged-in";
 
   function rememberSnapshot(snapshot: TabSnapshot) {
@@ -193,16 +219,20 @@ export function App() {
   }
 
   async function login() {
-    setLoggingIn(true);
+    if (!builtinProvider) return;
+    const selected = builtinProvider;
+    const generation = ++providerGenerations.current[selected];
+    setLoggingInFor(selected);
     try {
-      const next = await api.authLogin();
-      setAuth(next);
-      const listed = await api.listModels();
-      if (listed.models.length > 0) setModels(listed.models);
+      const next = await api.authLogin({ kind: selected });
+      if (generation !== providerGenerations.current[selected]) return;
+      setAuthByProvider((prev) => ({ ...prev, [selected]: next }));
+      const listed = await api.listModels({ kind: selected });
+      if (generation === providerGenerations.current[selected]) setCatalogs((prev) => ({ ...prev, [selected]: listed }));
     } catch (err) {
-      setAuth({ state: "error", email: null, via: "none", message: messageOf(err) });
+      if (generation === providerGenerations.current[selected]) setAuthByProvider((prev) => ({ ...prev, [selected]: { state: "error", email: null, via: "none", message: messageOf(err) } }));
     } finally {
-      setLoggingIn(false);
+      setLoggingInFor(null);
     }
   }
 
@@ -278,13 +308,13 @@ export function App() {
             ) : null}
           </div>
           <div className="auth">
-            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}>
+            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={builtinProvider ? `${providerLabel} · ${loggingIn ? t("app.browserOpen") : authLabel(auth, t)}` : providerLabel}>
               <span className="pill-dot" aria-hidden="true" />
-              Cursor · {(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}
+              {providerLabel}{builtinProvider ? ` · ${loggingIn ? t("app.browserOpen") : authLabel(auth, t)}` : ""}
             </span>
-            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0 || loggingIn}>
+            {builtinProvider ? <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0 || loggingInFor !== null} title={providerLabel}>
               {t("app.login")}
-            </button>
+            </button> : null}
           </div>
         </div>
         {runningCount > 0 ? <div className="beam" aria-hidden="true" /> : null}
@@ -296,7 +326,7 @@ export function App() {
           ordinal={tab.ordinal}
           initialForm={tab.initialForm}
           active={tab.id === activeId}
-          models={models}
+          catalogs={catalogs}
           onSnapshot={rememberSnapshot}
         />
       ))}
@@ -309,19 +339,23 @@ function TrainingSession({
   ordinal,
   initialForm,
   active,
-  models,
+  catalogs,
   onSnapshot,
 }: {
   sessionId: string;
   ordinal: number;
   initialForm: TrainRequest;
   active: boolean;
-  models: ModelOption[];
+  catalogs: ProviderCatalogs;
   onSnapshot: (snapshot: TabSnapshot) => void;
 }) {
   const { locale, t } = useI18n();
   const api = window.trainer;
   const [form, setForm] = useState<TrainRequest>(initialForm);
+  const provider = restoreProvider(form.provider);
+  const builtinProvider = isBuiltinProvider(provider.kind) ? provider.kind : null;
+  const catalog = builtinProvider ? catalogs[builtinProvider] : undefined;
+  const models = catalog?.models ?? NO_MODELS;
   const [skillInfo, setSkillInfo] = useState<{ name: string; fileCount: number } | null>(null);
   const skillName = skillInfo ? skillLabel(skillInfo, t) : null;
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
@@ -356,6 +390,21 @@ function TrainingSession({
     seenAgents.current.add(runId);
     pushFeed({ type: "agent", runId });
   }
+
+  function changeProvider(next: ProviderKind) {
+    deriveGen.current += 1;
+    const model = isBuiltinProvider(next) ? catalogs[next].models[0]?.id ?? "" : "";
+    setForm((prev) => ({ ...prev, provider: restoreProvider({ kind: next }), targetModel: model, optimizerModel: model }));
+  }
+
+  useEffect(() => {
+    const model = models[0]?.id;
+    if (!model || running || deriving) return;
+    setForm((prev) => {
+      if (restoreProvider(prev.provider).kind !== provider.kind || (prev.targetModel && prev.optimizerModel)) return prev;
+      return { ...prev, targetModel: prev.targetModel || model, optimizerModel: prev.optimizerModel || model };
+    });
+  }, [models, provider.kind, running, deriving]);
 
   useEffect(() => {
     if (!api || !active) return;
@@ -578,7 +627,7 @@ function TrainingSession({
     const label = models.find((item) => item.id === model)?.label ?? model;
     pushFeed({ type: "note", text: t("runner.readingSkill", { model: label }) });
     try {
-      const fields = await api.deriveSkillFields(skillPath, model, form.provider);
+      const fields = await api.deriveSkillFields(skillPath, model, provider);
       if (generation !== deriveGen.current) return;
       setForm((prev) => ({ ...prev, skillBrief: fields.ziel, auftrag: fields.auftrag }));
       pushFeed({ type: "note", text: t("runner.fieldsFilled") });
@@ -662,10 +711,12 @@ function TrainingSession({
               form={form}
               running={running}
               models={models}
+              modelError={catalog?.error}
               skillName={skillName}
               projectSkills={projectSkills}
               skillsNote={skillsNote}
               onChange={setForm}
+              onProviderChange={changeProvider}
               onChooseSkill={() => void chooseSkill()}
               onChooseDestination={() => void chooseDestination()}
               onChooseFolder={() => void chooseFolder()}

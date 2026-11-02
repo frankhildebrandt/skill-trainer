@@ -11,14 +11,15 @@ npm run docs:dev
 
 Die Startseite stellt die App mit Screenshots vor. Unter `/skill-trainer/docs/` folgen Einstieg, Workflows, Prüfung, Ergebnisse und eine vollständige Referenz aller Einstellungen und Schalter. `npm run docs:check` prüft die Astro-Dateien; `npm run docs:build` baut die statische Website und prüft ihre internen Links. GitHub Actions prüft Website-Änderungen in Pull Requests und veröffentlicht sie nach einem Push auf `main` automatisch auf GitHub Pages.
 
-Trainiert eine `SKILL.md` gegen einen Projektordner und einen Auftrag. Die Läufe gehen wahlweise über das Cursor-SDK und dein Cursor-Abo oder über OpenAI, OpenRouter und OpenAI-kompatible Endpunkte. Electron, weil das SDK in Node läuft.
+Trainiert eine `SKILL.md` gegen einen Projektordner und einen Auftrag. Als Inference-Anbieter stehen Cursor über das Cursor-SDK, Codex über den lokalen Codex App Server sowie OpenAI, OpenRouter und OpenAI-kompatible Endpunkte zur Auswahl. Die Electron-App verwendet den konfigurierten Modellzugang des gewählten Anbieters.
 
 Das Fine-Tuning folgt [SkillOpt](https://microsoft.github.io/SkillOpt/) von Microsoft Research: der Skill-Ordner ist der trainierbare Zustand, das Modell bleibt fest. Der Optimierer kann die gesamte `SKILL.md` umschreiben, Frontmatter ändern und Referenzen oder Skripte anlegen, ändern und löschen. Eine Fine-Tuning-Fassung wird nur behalten, wenn sie auf frischen Läufen des Hauptauftrags einen höheren Gate-Score hat. Gleichstand zählt als Ablehnung.
 
 ## Anbieter und lokale Modelle
 
-Im Formular gilt **Anbieter** für Zielmodell und Optimierer sowie „Mit Modell füllen“. Cursor bleibt die Voreinstellung. Andere Anbieter brauchen keine Cursor-Anmeldung; die Anzeige oben im Fenster bezieht sich ausschließlich auf Cursor.
+Im Formular gilt der **Inference-Anbieter** pro Trainings-Tab für Zielmodell, Optimierer, Entwürfe, „Mit Modell füllen“ und die Erstellung des Testskripts. Cursor bleibt die Voreinstellung. Die Kopfzeile zeigt den Anbieter des aktiven Tabs; die Browser-Anmeldung gehört zu Cursor beziehungsweise Codex. OpenAI-kompatible Endpunkte verwenden ihre eigene Schlüsselkonfiguration.
 
+- **Codex App Server:** lokaler `codex app-server` mit vorhandener Codex-Anmeldung; Einrichtung unten unter **Start**.
 - **OpenAI:** `https://api.openai.com/v1`, Schlüssel aus `OPENAI_API_KEY`.
 - **OpenRouter:** `https://openrouter.ai/api/v1`, Schlüssel aus `OPENROUTER_API_KEY`.
 - **Ollama:** `http://localhost:11434/v1` (Server mit `ollama serve` starten).
@@ -26,11 +27,11 @@ Im Formular gilt **Anbieter** für Zielmodell und Optimierer sowie „Mit Modell
 - **LM Studio:** `http://localhost:1234/v1` (Modell laden und lokalen Server starten).
 - **OpenAI-kompatibel:** frei wählbare API-Basis-URL, einschließlich eigener Proxy-Pfade.
 
-Basis-URL und Name der Schlüssel-Umgebungsvariable sind anpassbar. Die URL enthält das API-Präfix wie `/v1`, ohne `/chat/completions`. Setze benötigte Schlüssel vor dem App-Start in der Umgebung des App-Prozesses. Bei lokalen Servern ohne Anmeldung bleibt das Variablenfeld leer. Gespeichert werden nur URL und Variablenname, keine Schlüsselwerte.
+Für OpenAI-kompatible Endpunkte sind Basis-URL und Name der Schlüssel-Umgebungsvariable anpassbar. Die URL enthält das API-Präfix wie `/v1`, ohne `/chat/completions`. Setze benötigte Schlüssel vor dem App-Start in der Umgebung des App-Prozesses. Bei lokalen Servern ohne Anmeldung bleibt das Variablenfeld leer. Gespeichert werden nur URL und Variablenname, keine Schlüsselwerte.
 
-Die App lädt Modelle über `GET /models`. Du kannst Modell-IDs auch direkt eingeben, falls ein Endpunkt keine Modellliste anbietet. Beim Anbieterwechsel werden die Modellfelder geleert; wähle Zielmodell und Optimierer erneut.
+Bei Cursor stammt die Modellliste aus dem SDK, bei Codex aus `model/list` des App Servers. OpenAI-kompatible Endpunkte laden sie über `GET /models`; dort kannst du Modell-IDs auch direkt eingeben, falls ein Endpunkt keine Modellliste anbietet. Ein Anbieterwechsel setzt die bisherigen Modell-IDs zurück; wähle Zielmodell und Optimierer aus der neuen Liste oder trage die passende ID ein.
 
-Die Anbindung verwendet [Chat Completions mit Function Calling](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). Trainingsläufe haben Werkzeuge zum Lesen, Auflisten, Schreiben und Löschen von Dateien und in Projektkopien zum Ausführen von Shell-Befehlen. Im leeren Gate entfällt die Shell. Entwürfe dürfen das Projekt nur lesen; Optimierung und Formularanalyse erhalten ohne Projektanalyse keine Werkzeuge. Das gewählte Modell und der Server müssen Tool Calling unterstützen, damit der Agent die Codebase lesen und bearbeiten kann. Das gilt auch für [Ollama](https://docs.ollama.com/api/openai-compatibility), [MLX-LM](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/server.py) und [LM Studio](https://lmstudio.ai/docs/developer/openai-compat). Antworten werden nach jeder abgeschlossenen Modellrunde angezeigt. Anbieterfehler und unvollständige Antworten brechen den Lauf mit einer Fehlermeldung ab.
+Die OpenAI-kompatible Anbindung verwendet [Chat Completions mit Function Calling](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). Trainingsläufe haben Werkzeuge zum Lesen, Auflisten, Schreiben und Löschen von Dateien und in Projektkopien zum Ausführen von Shell-Befehlen. Im leeren Gate entfällt die Shell. Entwürfe dürfen das Projekt nur lesen; Optimierung und Formularanalyse erhalten ohne Projektanalyse keine Werkzeuge. Das gewählte Modell und der Server müssen Tool Calling unterstützen, damit der Agent die Codebase lesen und bearbeiten kann. Das gilt auch für [Ollama](https://docs.ollama.com/api/openai-compatibility), [MLX-LM](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/server.py) und [LM Studio](https://lmstudio.ai/docs/developer/openai-compat). Antworten werden nach jeder abgeschlossenen Modellrunde angezeigt. Anbieterfehler und unvollständige Antworten brechen den Lauf mit einer Fehlermeldung ab.
 
 ## Workflows und Budgets
 
@@ -51,7 +52,7 @@ Alle Änderungen bleiben zunächst in der Sitzung. **Änderungen übernehmen** e
 1. Vorprüfung. Der Prüfbefehl muss auf einer frischen Kopie noch fehlschlagen. Sonst kann das Gate einen besseren Skill nicht vom Nichtstun unterscheiden. Wenn der Agent das Testskript schreibt, liegt es unter `.skill-trainer/checks/run.sh`. Nur dieser Ordner wird übernommen und vor jeder Bewertung wiederhergestellt.
 2. Baseline. Der aktuelle Skill läuft mehrfach auf dem Hauptauftrag.
 3. Training. Weitere Läufe, parallel, jeder in einer eigenen Kopie des Arbeitsbaums. Die Kopie bekommt ein neues Git und ist kein Worktree des Projekts. Der Originalordner wird nur gelesen. Uncommittete Dateien werden mitgenommen. `node_modules`, `.venv` und `venv` werden per `cp -c` kopiert, nicht verlinkt.
-4. Reflexion. Fehlschläge und Treffer gehen getrennt an einen zweiten Cursor-Agenten. Der schlägt Änderungen am gesamten Skill-Ordner vor. Die eingestellten Budgets gelten, sofern sie nicht aufgehoben wurden.
+4. Reflexion. Fehlschläge und Treffer gehen getrennt an einen zweiten Agenten des gewählten Anbieters. Der schlägt Änderungen am gesamten Skill-Ordner vor. Die eingestellten Budgets gelten, sofern sie nicht aufgehoben wurden.
 5. Gate. Dieselben frischen Wiederholungen des Hauptauftrags, mit der Kandidatenfassung. Übernommen nur bei striktem Anstieg.
 6. Verworfene Edits bleiben als Negativbeispiel für den nächsten Vorschlag. Ein Slow-Update am Ende darf eine dauerhafte Notiz ergänzen, wieder nur nach Gate. Auch dieser Bereich darf vom Optimierer überarbeitet werden.
 
@@ -65,7 +66,7 @@ Die Kopien ändern deinen Ordner nicht: kein Worktree, kein Commit und keine Än
 
 Ein Skill darf ein Ordner sein: `SKILL.md` plus Skripte, Referenzen und weitere Dateien. Die Auswahl nimmt den Ordner oder die `SKILL.md`; mitkommt der ganze Ordner außer Git-Metadaten, Abhängigkeiten und Caches. Jeder Lauf bekommt die aktuelle Fassung einschließlich neu angelegter und gelöschter Dateien. Text-Edits und Dateioperationen haben getrennt einstellbare Budgets.
 
-Während der Läufe bekommt der Agent den Skill-Text direkt in den Prompt und den Skill-Ordner in der Kopie (`.cursor/skills/…`, plus der ursprüngliche Pfad, wenn der Skill im Projekt liegt). Projekt-Settings sind an, globale Skills aus, damit nicht eine ältere Nutzerfassung mitmisst.
+Während der Läufe bekommt der Agent den Skill-Text direkt in den Prompt und den Skill-Ordner in der Kopie (`.cursor/skills/…`, plus der ursprüngliche Pfad, wenn der Skill im Projekt liegt). Cursor lädt in normalen Projektläufen Projekt-Settings und keine globalen Settings. Codex deaktiviert globale Skills und konfigurierte MCP-Server für die Inference-Läufe. Im leeren Gate sind bei allen Anbietern ausschließlich auf die Laufkopie beschränkte Dateiwerkzeuge verfügbar.
 
 ## Sprachen
 
@@ -85,8 +86,20 @@ npm run dev
 
 Wenn das Fenster nicht aufgeht, weil der Electron-Download blockiert wurde: `node node_modules/electron/install.js` und danach `npm run dev` noch einmal.
 
-Im Fenster „Anmelden“. Das SDK öffnet den Browser und speichert einen User-Key unter `~/.cursor/sdk/auth.json`. Alternativ reicht `CURSOR_API_KEY` in der Umgebung. Die Läufe werden wie andere Cursor-Nutzung abgerechnet.
+Wähle im Trainingsformular den **Inference-Anbieter**. Die Auswahl gilt für die gesamte Sitzung: Zielmodell, Optimierer, Entwürfe, „Mit Modell füllen“ und die Erstellung des Testskripts. Modellliste und Zugang gehören zum ausgewählten Anbieter. Cursor bleibt die Voreinstellung für neue und ältere gespeicherte Konfigurationen.
 
-Dann einen Projektordner wählen. Jede `SKILL.md` in diesem Projekt steht als Skill zur Auswahl; gibt es nur eine, ist sie schon ausgewählt. Ein Skill außerhalb des Projekts lässt sich weiter von Hand wählen. Danach Auftrag und Prüfung setzen. Die Prüfung ist wählbar. Entweder gibst du den Testbefehl selbst an, zum Beispiel `npm test` oder `cargo test --quiet`. Oder der Agent schreibt vorher ein Testskript nach `.skill-trainer/checks/run.sh`; der Trainer bewertet danach jeden Lauf damit und stellt das Skript vor der Bewertung wieder her. Der Befehl muss den Auftrag wirklich prüfen, und er muss vor dem Training noch rot sein.
+Für **Cursor** im Fenster „Anmelden“. Das SDK öffnet den Browser und speichert einen User-Key unter `~/.cursor/sdk/auth.json`. Alternativ reicht `CURSOR_API_KEY` in der Umgebung. Die Läufe werden wie andere Cursor-Nutzung abgerechnet.
+
+Für **Codex App Server** muss die [Codex CLI](https://learn.chatgpt.com/docs/cli) ab Version **0.166.0** im `PATH` der App verfügbar und angemeldet sein:
+
+```bash
+npm install -g @openai/codex
+codex login
+codex login status
+```
+
+Die App startet `codex app-server --listen stdio://` lokal und verwendet dessen Anmeldung und Modellkatalog. Es ist keine separat gestartete Serverinstanz nötig. Die Modellnutzung erfolgt über dein Codex-Konto beziehungsweise dessen Authentifizierung; ein Cursor-Zugang ist dafür nicht erforderlich. Details zur Anmeldung stehen in der [offiziellen OpenAI-Dokumentation](https://learn.chatgpt.com/docs/auth).
+
+Dann einen Projektordner wählen. Jede `SKILL.md` in diesem Projekt steht als Skill zur Auswahl; gibt es nur eine, ist sie schon ausgewählt. Ein Skill außerhalb des Projekts lässt sich weiter von Hand wählen. Danach Auftrag und Prüfung setzen. **Aus Cursor-Läufen** übernimmt weiterhin ausschließlich Aufträge aus der Cursor-Historie, auch wenn ein anderer Inference-Anbieter gewählt ist. Die Prüfung ist wählbar. Entweder gibst du den Testbefehl selbst an, zum Beispiel `npm test` oder `cargo test --quiet`. Oder der Agent schreibt vorher ein Testskript nach `.skill-trainer/checks/run.sh`; der Trainer bewertet danach jeden Lauf damit und stellt das Skript vor der Bewertung wieder her. Der Befehl muss den Auftrag wirklich prüfen, und er muss vor dem Training noch rot sein.
 
 Sitzungen liegen unter dem Electron-User-Data-Ordner in `sessions/`.

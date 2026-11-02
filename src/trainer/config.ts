@@ -1,4 +1,4 @@
-import { restoreProvider, type ProviderConfig } from "../shared/provider";
+import { isProviderKind, restoreProvider, type ProviderConfig } from "../shared/provider";
 import { translate, type Locale, type Translate } from "../shared/i18n";
 import { DEFAULT_BUDGET } from "../shared/budget";
 import { estimateRuns } from "../shared/estimate";
@@ -35,6 +35,8 @@ export interface NormalizedTrain {
 
 export function normalizeRequest(request: TrainRequest, locale: Locale = "de"): NormalizedTrain {
   const t: Translate = (key, values) => translate(locale, key, values);
+  const kind = typeof request.provider === "string" ? request.provider : request.provider?.kind;
+  if (request.provider !== undefined && !isProviderKind(kind)) throw new Error(t("trainer.unknownProvider"));
   const workflow = request.workflow ?? "train";
   if (!["train", "pretrain", "create"].includes(workflow)) throw new Error(t("trainer.unknownWorkflow"));
   const trainAfterDraft = workflow === "train" || request.trainAfterDraft !== false;

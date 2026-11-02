@@ -3,6 +3,7 @@ import type { TrainRequest } from "./types";
 import { restoreBudget } from "./budget";
 
 const DEFAULTS: TrainRequest = {
+  provider: { kind: "cursor" },
   skillPath: "",
   workspacePath: "",
   auftrag: "",

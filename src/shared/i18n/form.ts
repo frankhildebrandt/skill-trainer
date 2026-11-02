@@ -1,6 +1,8 @@
 import type { Translations } from "./types";
 
 const de = {
+  "form.provider": "Inference-Anbieter",
+  "form.codexSetup": "Benötigt die Codex CLI. Mit „Anmelden“ verbinden oder zuvor codex login ausführen.",
   "form.fromSkill": "Aus dem Skill",
   "form.analyzing": "Analysiert…",
   "form.fillWithModel": "Mit Modell füllen",
@@ -78,6 +80,8 @@ const de = {
 export const formMessages = {
   de,
   en: {
+  "form.provider": "Inference provider",
+  "form.codexSetup": "Requires the Codex CLI. Connect with “Sign in” or run codex login first.",
     "form.fromSkill": "From the skill",
     "form.analyzing": "Analyzing…",
     "form.fillWithModel": "Fill using model",
@@ -152,6 +156,8 @@ export const formMessages = {
     "form.resizeHint": "{label} · drag to resize, double-click to reset"
   },
   fr: {
+  "form.provider": "Fournisseur d’inférence",
+  "form.codexSetup": "Nécessite Codex CLI. Connectez-vous avec « Se connecter » ou exécutez d’abord codex login.",
     "form.fromSkill": "À partir de la compétence",
     "form.analyzing": "Analyse en cours…",
     "form.fillWithModel": "Remplir avec le modèle",
@@ -226,6 +232,8 @@ export const formMessages = {
     "form.resizeHint": "{label} · faire glisser pour redimensionner, double-cliquer pour réinitialiser"
   },
   it: {
+  "form.provider": "Provider di inferenza",
+  "form.codexSetup": "Richiede Codex CLI. Collegati con «Accedi» oppure esegui prima codex login.",
     "form.fromSkill": "Dalla skill",
     "form.analyzing": "Analisi in corso…",
     "form.fillWithModel": "Compila con il modello",
@@ -300,6 +308,8 @@ export const formMessages = {
     "form.resizeHint": "{label} · trascina per ridimensionare, fai doppio clic per reimpostare"
   },
   es: {
+  "form.provider": "Proveedor de inferencia",
+  "form.codexSetup": "Requiere Codex CLI. Conecta con «Iniciar sesión» o ejecuta antes codex login.",
     "form.fromSkill": "Desde la habilidad",
     "form.analyzing": "Analizando…",
     "form.fillWithModel": "Rellenar con el modelo",
@@ -374,6 +384,8 @@ export const formMessages = {
     "form.resizeHint": "{label} · arrastra para cambiar el tamaño, haz doble clic para restablecer"
   },
   nl: {
+  "form.provider": "Inferentieprovider",
+  "form.codexSetup": "Vereist Codex CLI. Verbind via ‘Aanmelden’ of voer eerst codex login uit.",
     "form.fromSkill": "Uit de skill",
     "form.analyzing": "Analyseren…",
     "form.fillWithModel": "Invullen met model",

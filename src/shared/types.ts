@@ -206,8 +206,8 @@ export interface TrainerApi {
   loadLocale: () => Promise<Locale>;
   saveLocale: (locale: Locale) => Promise<void>;
   onLocaleChange: (cb: (locale: Locale) => void) => () => void;
-  authStatus: () => Promise<AuthStatus>;
-  authLogin: () => Promise<AuthStatus>;
+  authStatus: (provider?: ProviderConfig) => Promise<AuthStatus>;
+  authLogin: (provider?: ProviderConfig) => Promise<AuthStatus>;
   listModels: (provider?: ProviderConfig) => Promise<{ models: ModelOption[]; error?: string }>;
   pickSkill: () => Promise<string | null>;
   pickSkillDestination: () => Promise<string | null>;

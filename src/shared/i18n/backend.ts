@@ -1,6 +1,7 @@
 import type { Translations } from "./types";
 
 const de = {
+  "trainer.unknownProvider": "Unbekannter Inference-Anbieter.",
   "trainer.unknownWorkflow": "Unbekannter Workflow.",
   "trainer.chooseDestination": "Wähle den Zielordner für den neuen Skill.",
   "trainer.chooseSkill": "Wähle einen Skill-Ordner oder eine SKILL.md.",
@@ -95,6 +96,7 @@ const de = {
 export const backendMessages = {
   de,
   en: {
+  "trainer.unknownProvider": "Unknown inference provider.",
     "trainer.unknownWorkflow": "Unknown workflow.",
     "trainer.chooseDestination": "Choose the destination folder for the new skill.",
     "trainer.chooseSkill": "Choose a skill folder or a SKILL.md file.",
@@ -186,6 +188,7 @@ export const backendMessages = {
     "backend.invalidLocale": "Unsupported language.",
   },
   fr: {
+  "trainer.unknownProvider": "Fournisseur d’inférence inconnu.",
     "trainer.unknownWorkflow": "Processus inconnu.",
     "trainer.chooseDestination": "Choisissez le dossier de destination du nouveau skill.",
     "trainer.chooseSkill": "Choisissez un dossier de skill ou un fichier SKILL.md.",
@@ -277,6 +280,7 @@ export const backendMessages = {
     "backend.invalidLocale": "Langue non prise en charge.",
   },
   it: {
+  "trainer.unknownProvider": "Provider di inferenza sconosciuto.",
     "trainer.unknownWorkflow": "Flusso di lavoro sconosciuto.",
     "trainer.chooseDestination": "Scegli la cartella di destinazione della nuova skill.",
     "trainer.chooseSkill": "Scegli una cartella della skill o un file SKILL.md.",
@@ -368,6 +372,7 @@ export const backendMessages = {
     "backend.invalidLocale": "Lingua non supportata.",
   },
   es: {
+  "trainer.unknownProvider": "Proveedor de inferencia desconocido.",
     "trainer.unknownWorkflow": "Flujo de trabajo desconocido.",
     "trainer.chooseDestination": "Elige la carpeta de destino del nuevo skill.",
     "trainer.chooseSkill": "Elige una carpeta de skill o un archivo SKILL.md.",
@@ -459,6 +464,7 @@ export const backendMessages = {
     "backend.invalidLocale": "Idioma no compatible.",
   },
   nl: {
+  "trainer.unknownProvider": "Onbekende inferentieprovider.",
     "trainer.unknownWorkflow": "Onbekende workflow.",
     "trainer.chooseDestination": "Kies de doelmap voor de nieuwe skill.",
     "trainer.chooseSkill": "Kies een skillmap of een SKILL.md-bestand.",

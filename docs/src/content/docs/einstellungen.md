@@ -46,27 +46,31 @@ Beide Prüfmodi werden unter [Prüfung und Testskripte](/docs/pruefung/) erklär
 
 | Feld | Standard | Wirkung |
 | --- | --- | --- |
+| **Inference-Anbieter** | Cursor | Cursor-SDK, lokaler Codex App Server oder OpenAI-kompatibler API-Endpunkt. Gilt für alle Modellaufrufe dieses Trainings-Tabs; Zugang und Modellliste wechseln mit dem Anbieter. |
 | **Ziel → Allgemein** | ausgewählt | Optimierer soll ein wiederverwendbares Verfahren formulieren. |
 | **Ziel → Dieser Auftrag / Dieser Zweck** | aus | Erlaubt konkrete Befehle, Pfade, APIs und Fallstricke für den angegebenen Auftrag beziehungsweise Zweck. |
 | **In eigenen Worten** | leer | Zusätzliche Ausrichtung beim Fine-Tuning. Bei Entwurfsworkflows übernimmt die Pflichtbeschreibung diese Rolle. |
-| **Zielmodell** | Composer 2.5 | Führt Training, Baseline und Gate aus. Erstellt bei Agent-Prüfung auch das Testskript. Ohne Fine-Tuning ausgeblendet. |
-| **Optimierer** | Composer 2.5 | Erstellt Entwürfe und Vorschläge zur Überarbeitung des Skill-Ordners. |
+| **Zielmodell** | Composer 2.5 bei Cursor | Führt Training, Baseline und Gate aus. Erstellt bei Agent-Prüfung auch das Testskript. Ohne Fine-Tuning ausgeblendet. |
+| **Optimierer** | Composer 2.5 bei Cursor | Erstellt Entwürfe und Vorschläge zur Überarbeitung des Skill-Ordners. |
 
-Beide Rollen verwenden den ausgewählten **Anbieter** und dürfen dasselbe Modell verwenden. Bei Cursor stammt die Modellliste aus dem SDK. Andere Anbieter laden ihre Liste über `GET /models`; Modell-IDs lassen sich auch direkt eingeben. Beim Anbieterwechsel werden beide Modellfelder geleert.
+Beide Rollen verwenden den ausgewählten **Inference-Anbieter** und dürfen dasselbe Modell verwenden. Bei Cursor stammt die Modellliste aus dem SDK, bei Codex aus `model/list` des lokalen App Servers. Codex hat keine fest eingetragene Composer-Voreinstellung. OpenAI-kompatible Endpunkte laden ihre Liste über `GET /models`; dort lassen sich Modell-IDs auch direkt eingeben. Ein Anbieterwechsel setzt die bisherigen Modell-IDs zurück.
+
+Die Auswahl **Aus Cursor-Läufen** bleibt eine Cursor-Historie. Sie kann auch einen Trainingsauftrag für andere Anbieter liefern, listet aber keine Codex- oder API-Läufe auf. Einrichtung und Anmeldung beschreibt [Installation](/docs/installation/).
 
 ### Anbieter und API-Endpunkt
 
-Cursor ist voreingestellt. Zusätzlich stehen OpenAI, OpenRouter, Ollama, MLX, LM Studio und ein frei konfigurierbarer OpenAI-kompatibler Endpunkt zur Auswahl. **API-Basis-URL** enthält das API-Präfix wie `/v1`, ohne `/chat/completions`. Die Vorgaben sind:
+Cursor ist voreingestellt. Zusätzlich stehen Codex App Server, OpenAI, OpenRouter, Ollama, MLX, LM Studio und ein frei konfigurierbarer OpenAI-kompatibler Endpunkt zur Auswahl. Codex verwendet die lokale CLI-Anmeldung und benötigt hier keine API-Basis-URL. Für die OpenAI-kompatiblen Anbieter enthält **API-Basis-URL** das API-Präfix wie `/v1`, ohne `/chat/completions`. Die Vorgaben sind:
 
 - OpenAI: `https://api.openai.com/v1`
 - OpenRouter: `https://openrouter.ai/api/v1`
 - Ollama: `http://localhost:11434/v1`
 - MLX: `http://localhost:8080/v1`
 - LM Studio: `http://localhost:1234/v1`
+- OpenAI-kompatibel: `http://localhost:8000/v1`, frei anpassbar
 
 **Umgebungsvariable für API-Schlüssel** enthält den Namen der Variable, deren Wert der App-Prozess beim Start erbt. Für OpenAI ist `OPENAI_API_KEY` voreingestellt, für OpenRouter `OPENROUTER_API_KEY`. Lokale Server ohne Anmeldung lassen dieses Feld leer. Die App speichert nur den Variablennamen, keinen Schlüsselwert. Siehe [Installation](/docs/installation/).
 
-Der Anbieter gilt auch für die Formularanalyse und die Erstellung von Prüfskripten. Andere Anbieter benötigen keine Cursor-Anmeldung. Für Projektanalyse und Training müssen Modell und Endpunkt Tool Calling unterstützen. Die Anbindung verwendet Chat Completions; Aktivität erscheint nach jeder abgeschlossenen Modellrunde.
+Der Anbieter gilt auch für **Mit Modell füllen** und die Erstellung von Prüfskripten. OpenAI-kompatible Anbieter benötigen keine Cursor- oder Codex-Anmeldung. Für Projektanalyse und Training müssen Modell und Endpunkt Tool Calling unterstützen. Diese Anbindung verwendet Chat Completions; Aktivität erscheint nach jeder abgeschlossenen Modellrunde. Cursor und Codex liefern ihre Aktivität als Stream.
 
 ## Umfang des Trainings
 

@@ -5,7 +5,7 @@ import { withBase } from "../lib/urls";
 import "../styles/global.css";
 
 interface Props { title?: string; description?: string; documentation?: boolean; noindex?: boolean; }
-const { title, description = "Erstelle und verbessere Cursor-Skills mit echten Aufgaben, frischen Prüfläufen und nachvollziehbaren Änderungen. Die Desktop-App für deinen Skill-Ordner.", documentation = false, noindex = false } = Astro.props;
+const { title, description = "Erstelle und verbessere Agent-Skills mit Cursor, Codex oder OpenAI-kompatiblen APIs, echten Aufgaben und frischen Prüfläufen. Die Desktop-App für deinen Skill-Ordner.", documentation = false, noindex = false } = Astro.props;
 const pageTitle = title ? `${title} · Skill Trainer` : "Skill Trainer – Mach aus Erfahrung bessere Skills";
 const canonicalUrl = Astro.site && !noindex ? new URL(Astro.url.pathname, Astro.site) : undefined;
 ---
@@ -46,7 +46,7 @@ const canonicalUrl = Astro.site && !noindex ? new URL(Astro.url.pathname, Astro.
           <a href={withBase("/docs/")}>Dokumentation</a>
           <a href="https://github.com/frankhildebrandt/skill-trainer">Quellcode <span aria-hidden="true">↗</span></a>
         </nav>
-        <span class="footer-note">Gebaut für Cursor. Eigenständiges Projekt.</span>
+        <span class="footer-note">Mit Cursor, Codex und weiteren Modellanbietern. Eigenständiges Projekt.</span>
       </div>
     </footer>
   </body>

@@ -1,11 +1,11 @@
 ---
 title: Installation und Anmeldung
-description: Skill Trainer aus dem Repository starten und mit Cursor verbinden.
+description: Skill Trainer aus dem Repository starten und Cursor, Codex oder OpenAI-kompatible Endpunkte verbinden.
 section: Start
 order: 20
 ---
 
-Skill Trainer läuft als Electron-Desktop-App. Zum Start aus dem Repository benötigst du **Node.js ab Version 22.13**, npm und Git. Die Agent-Läufe verwenden wahlweise das Cursor-SDK mit Cursor-Anmeldung oder einen OpenAI-kompatiblen API-Endpunkt.
+Skill Trainer läuft als Electron-Desktop-App. Zum Start aus dem Repository benötigst du **Node.js ab Version 22.13**, npm und Git. Als Inference-Anbieter wählst du Cursor, Codex App Server oder einen OpenAI-kompatiblen API-Endpunkt. Anmeldung beziehungsweise API-Schlüssel und verfügbare Modelle richten sich nach dem gewählten Anbieter.
 
 Die Projektkopien verwenden außerdem `tar` und beim Kopieren vorhandener `node_modules`-, `.venv`- oder `venv`-Ordner den Befehl `cp -cR`. Diese Clone-Option steht unter macOS zur Verfügung. Prüfe sie auf anderen Systemen; die aktuelle Implementierung enthält dafür keinen Ersatz.
 
@@ -30,11 +30,29 @@ npm run dev
 
 ## Mit Cursor verbinden
 
-Klicke im App-Fenster oben auf **Anmelden**. Das Cursor-SDK öffnet den Browser für die Anmeldung. Danach zeigt die App deinen Anmeldestatus und lädt die verfügbaren Modelle. Die vom SDK gespeicherten Anmeldedaten liegen unter `~/.cursor/sdk/auth.json`.
+Lass im Trainingsformular **Inference-Anbieter → Cursor** ausgewählt und klicke im App-Fenster oben auf **Anmelden**. Das Cursor-SDK öffnet den Browser für die Anmeldung. Danach zeigt die App deinen Anmeldestatus und lädt die verfügbaren Modelle. Die vom SDK gespeicherten Anmeldedaten liegen unter `~/.cursor/sdk/auth.json`.
 
 Alternativ kannst du `CURSOR_API_KEY` in der Umgebung setzen, aus der du die App startest. Die Statusanzeige zeigt dann **API-Key**. Trage den Schlüssel weder in den Trainingsauftrag noch in einen Skill ein.
 
-Die Modellaufrufe werden über deine Cursor-Nutzung abgerechnet. Edit- und Laufbudgets sind Grenzen der App; sie sind kein Geld- oder Tokenbudget.
+Die Modellaufrufe werden über deine Cursor-Nutzung abgerechnet.
+
+## Mit Codex App Server verbinden
+
+Installiere die [Codex CLI](https://learn.chatgpt.com/docs/cli) ab Version **0.166.0** und melde dich an:
+
+```bash
+npm install -g @openai/codex
+codex login
+codex login status
+```
+
+`codex` muss für den Prozess verfügbar sein, der Skill Trainer startet. Die App sucht im `PATH` und in üblichen Installationsverzeichnissen; mit `CODEX_APP_SERVER_BIN` kannst du den vollständigen Pfad zur ausführbaren Datei vorgeben. Wähle dann im Trainingsformular **Inference-Anbieter → Codex App Server**. Die App übernimmt die vorhandene Codex-Anmeldung und lädt den Modellkatalog des App Servers. Du kannst dich auch über **Anmelden** in der App verbinden. Die [offizielle OpenAI-Dokumentation zur Authentifizierung](https://learn.chatgpt.com/docs/auth) erklärt die verfügbaren Anmeldearten.
+
+Skill Trainer startet den App Server selbst als lokalen Unterprozess und kommuniziert über `stdio`. Du musst keinen Server und keinen Port einrichten. Die gewählte Codex-Anmeldung bestimmt den Modellzugang und die Abrechnung.
+
+Die Anbieterwahl gilt pro Trainings-Tab für Training, Optimierer, Entwürfe, Skill-Analyse und Testskripterstellung. Die Kopfzeile zeigt den Anbieter des aktiven Tabs und bei Cursor oder Codex dessen Anmeldestatus. Bei einem Anbieterwechsel wählst du Modelle aus dessen eigener Liste. Ältere gespeicherte Einstellungen verwenden weiterhin Cursor.
+
+Edit- und Laufbudgets sind Grenzen der App; sie sind kein Geld- oder Tokenbudget.
 
 ## OpenAI, OpenRouter oder lokale Server verwenden
 
@@ -42,7 +60,7 @@ Wähle im Trainingsformular den Anbieter. OpenAI und OpenRouter verwenden standa
 
 Bei Ollama, MLX und LM Studio starte zuerst den jeweiligen lokalen Server und lade ein Modell mit Tool-Calling-Unterstützung. Die App setzt passende lokale API-Basis-URLs ein, die du anpassen kannst. Bei einem Server ohne Anmeldung bleibt das Feld für die Schlüsselvariable leer. Trage in Zielmodell und Optimierer die Modell-ID des Servers ein oder wähle aus dessen Modellliste.
 
-Die Anmeldung oben im Fenster betrifft ausschließlich Cursor. Für andere Anbieter ist sie nicht erforderlich. Alle URL-Vorgaben und Optionen stehen unter [Einstellungen](/docs/einstellungen/#anbieter-und-api-endpunkt).
+Für diese API-Endpunkte ist keine Browser-Anmeldung über die Kopfzeile nötig. Sie verwenden die eingestellte Schlüsselvariable oder bei lokalen Servern einen Zugang ohne Schlüssel. Alle URL-Vorgaben und Optionen stehen unter [Einstellungen](/docs/einstellungen/#anbieter-und-api-endpunkt).
 
 ## Projekt vorbereiten
 

@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { restoreSettings } from "./settings";
 
 describe("restoreSettings", () => {
+  it("restores the inference provider and keeps older sessions on Cursor", () => {
+    expect(restoreSettings({ provider: "codex", targetModel: "codex-model" })).toMatchObject({ provider: { kind: "codex" }, targetModel: "codex-model" });
+    expect(restoreSettings({})?.provider?.kind).toBe("cursor");
+    expect(restoreSettings({ provider: "unknown" })?.provider?.kind).toBe("cursor");
+    expect(restoreSettings({ provider: { kind: "codex" } })?.provider?.kind).toBe("codex");
+    expect(restoreSettings({ provider: "codex" })).toMatchObject({ targetModel: "", optimizerModel: "" });
+  });
   it("keeps a saved form", () => {
     const form = restoreSettings({
       skillPath: "/tmp/skill",

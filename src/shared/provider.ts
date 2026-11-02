@@ -1,5 +1,6 @@
 export const PROVIDERS = {
   cursor: { label: "Cursor", baseUrl: "", apiKeyEnv: "" },
+  codex: { label: "Codex App Server", baseUrl: "", apiKeyEnv: "" },
   openai: { label: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKeyEnv: "OPENAI_API_KEY" },
   openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "OPENROUTER_API_KEY" },
   ollama: { label: "Ollama", baseUrl: "http://localhost:11434/v1", apiKeyEnv: "" },
@@ -16,9 +17,14 @@ export interface ProviderConfig {
   apiKeyEnv?: string;
 }
 
+export function isProviderKind(value: unknown): value is ProviderKind {
+  return typeof value === "string" && Object.hasOwn(PROVIDERS, value);
+}
+
+/** Restores endpoint configurations and the original Cursor/Codex string settings. */
 export function restoreProvider(raw: unknown): ProviderConfig {
-  const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-  const kind = typeof value.kind === "string" && Object.hasOwn(PROVIDERS, value.kind) ? value.kind as ProviderKind : "cursor";
+  const value = typeof raw === "string" ? { kind: raw } : raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const kind = isProviderKind(value.kind) ? value.kind : "cursor";
   return {
     kind,
     baseUrl: typeof value.baseUrl === "string" ? value.baseUrl : PROVIDERS[kind].baseUrl,

@@ -10,8 +10,8 @@ const api: TrainerApi = {
     ipcRenderer.on("locale:changed", listener);
     return () => ipcRenderer.removeListener("locale:changed", listener);
   },
-  authStatus: () => ipcRenderer.invoke("auth:status"),
-  authLogin: () => ipcRenderer.invoke("auth:login"),
+  authStatus: (provider) => ipcRenderer.invoke("auth:status", provider),
+  authLogin: (provider) => ipcRenderer.invoke("auth:login", provider),
   listModels: (provider) => ipcRenderer.invoke("models:list", provider),
   pickSkill: () => ipcRenderer.invoke("dialog:skill"),
   pickSkillDestination: () => ipcRenderer.invoke("dialog:skill-destination"),

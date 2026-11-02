@@ -9,11 +9,13 @@ import { useI18n } from "./i18n";
 export function TrainerForm({
   form,
   running,
-  models: cursorModels,
+  models: builtinModels,
+  modelError: builtinModelError,
   skillName,
   projectSkills,
   skillsNote,
   onChange,
+  onProviderChange,
   onChooseSkill,
   onChooseDestination,
   onChooseFolder,
@@ -25,10 +27,12 @@ export function TrainerForm({
   running: boolean;
   deriving: boolean;
   models: ModelOption[];
+  modelError?: string;
   skillName: string | null;
   projectSkills: ProjectSkill[];
   skillsNote: string | null;
   onChange: (form: TrainRequest) => void;
+  onProviderChange: (provider: ProviderKind) => void;
   onChooseSkill: () => void;
   onChooseDestination: () => void;
   onChooseFolder: () => void;
@@ -37,22 +41,23 @@ export function TrainerForm({
 }) {
   const { t } = useI18n();
   const provider = restoreProvider(form.provider);
-  const compatible = provider.kind !== "cursor";
+  const compatible = provider.kind !== "cursor" && provider.kind !== "codex";
   const [remoteModels, setRemoteModels] = useState<ModelOption[]>([]);
-  const [modelError, setModelError] = useState("");
-  const models = compatible ? remoteModels : cursorModels;
+  const [remoteModelError, setRemoteModelError] = useState("");
+  const models = compatible ? remoteModels : builtinModels;
+  const modelError = compatible ? remoteModelError : builtinModelError;
   useEffect(() => {
     setRemoteModels([]);
-    setModelError("");
+    setRemoteModelError("");
     if (!compatible) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       void window.trainer.listModels(provider).then((result) => {
         if (cancelled) return;
         setRemoteModels(result.models);
-        setModelError(result.error ?? "");
+        setRemoteModelError(result.error ?? "");
       }).catch((error: unknown) => {
-        if (!cancelled) setModelError(String(error));
+        if (!cancelled) setRemoteModelError(error instanceof Error ? error.message : String(error));
       });
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
@@ -75,15 +80,12 @@ export function TrainerForm({
   return (
     <>
       <label>
-        {t("provider.title")}
-        <select value={provider.kind} disabled={locked} onChange={(event) => {
-          const kind = event.target.value as ProviderKind;
-          onChange({ ...form, provider: { kind, ...PROVIDERS[kind] },
-            targetModel: kind === "cursor" ? "composer-2.5" : "",
-            optimizerModel: kind === "cursor" ? "composer-2.5" : "" });
-        }}>
+        {t("form.provider")}
+        <select value={provider.kind} disabled={locked} onChange={(event) => onProviderChange(event.target.value as ProviderKind)}>
           {Object.entries(PROVIDERS).map(([kind, preset]) => <option key={kind} value={kind}>{kind === "compatible" ? t("provider.custom") : preset.label}</option>)}
         </select>
+        {provider.kind === "codex" ? <small>{t("form.codexSetup")}</small> : null}
+        {!compatible && modelError ? <small role="status">{modelError}</small> : null}
       </label>
       {compatible ? <>
         <label>{t("provider.url")}
@@ -352,6 +354,7 @@ function ModelField({ label, models, value, disabled, onChange, custom }: {
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t } = useI18n();
   const listId = useId();
   const choices = !value || models.some((model) => model.id === value) ? models : [{ id: value, label: value }, ...models];
   return (
@@ -361,6 +364,7 @@ function ModelField({ label, models, value, disabled, onChange, custom }: {
         <input required list={listId} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
         <datalist id={listId}>{models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</datalist>
       </> : <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        {!value ? <option value="">{t("runner.noModel")}</option> : null}
         {choices.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
       </select>}
     </label>

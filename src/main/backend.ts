@@ -1,5 +1,5 @@
 import type { ProviderConfig } from "../shared/provider";
-import { restoreProvider } from "../shared/provider";
+import { isProviderKind, restoreProvider } from "../shared/provider";
 import { listCompatibleModels } from "../trainer/openai-runner";
 import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell, type NativeImage } from "electron";
@@ -15,6 +15,8 @@ import { performAttempt } from "../trainer/attempt";
 import { CHECK_COMMAND, harvestChecks, plantChecks, writeChecks, type CheckFile } from "../trainer/checks";
 import { normalizeRequest } from "../trainer/config";
 import { deriveSkillFields, executeAgent, isStartupError, proposeWithCursor } from "../trainer/cursor-runner";
+import { deriveFieldsWithCodex, executeWithCodex, proposeWithCodex } from "../trainer/codex-runner";
+import { listCodexModels, loginCodex, readCodexAuth } from "./codex-provider";
 import { prepareSkillDraft } from "../trainer/draft";
 import { assertSafeWorkspace, createEmptyRepo, isolateWorkspace } from "../trainer/isolate";
 import { trainSkill, type AttemptCall, type TrainerDeps } from "../trainer/loop";
@@ -81,8 +83,11 @@ export function registerBackend(): void {
     localeWrite = localeWrite.catch(() => undefined).then(() => writeSavedLocale(locale));
     await localeWrite;
   });
-  handle("auth:status", () => readAuth());
-  handle("auth:login", async () => {
+  handle("auth:status", (_event, provider: unknown) => readAuth(parseProvider(provider)));
+  handle("auth:login", async (_event, provider: unknown) => {
+    const config = parseProvider(provider);
+    if (config.kind === "codex") return loginCodex((url) => shell.openExternal(url));
+    if (config.kind !== "cursor") return readAuth(config);
     await Cursor.auth.login({
       apiKeyName: "skill-trainer",
       openBrowser: (url) => {
@@ -91,7 +96,7 @@ export function registerBackend(): void {
     });
     return readAuth();
   });
-  handle("models:list", (_event, provider?: ProviderConfig) => listModels(provider));
+  handle("models:list", (_event, provider: unknown) => listModels(parseProvider(provider)));
   handle("dialog:skill", async () => {
     await localeReady;
     const result = await dialog.showOpenDialog(dialogParent(), {
@@ -128,13 +133,15 @@ export function registerBackend(): void {
   handle("settings:save", async (_event, request: TrainRequest) => {
     await writeSavedSettings(request);
   });
-  handle("skill:derive", async (_event, skillPath: unknown, modelId: unknown, provider?: ProviderConfig) => {
+  handle("skill:derive", async (_event, skillPath: unknown, modelId: unknown, provider: unknown) => {
+    const config = parseProvider(provider);
+    const derive = config.kind === "codex" ? deriveFieldsWithCodex : deriveSkillFields;
     const model = String(modelId ?? "").trim();
     if (!model) throw new Error(t("runner.noModel"));
     const bundle = await loadSkillBundle(String(skillPath ?? ""));
     const controller = new AbortController();
-    return deriveSkillFields({
-      provider: restoreProvider(provider),
+    return derive({
+      provider: config,
       locale: currentLocale,
       translate: t,
       model,
@@ -334,7 +341,8 @@ function sessionProposer(
     const cwd = path.join(sessionDir, "optimizer", runId);
     await fs.mkdir(cwd, { recursive: true });
     try {
-      const proposal = await proposeWithCursor({ ...input, provider: config.provider, translate: t, model: config.optimizerModel, cwd,
+      const propose = config.provider.kind === "codex" ? proposeWithCodex : proposeWithCursor;
+      const proposal = await propose({ ...input, provider: config.provider, translate: t, model: config.optimizerModel, cwd,
         onActivity: (update) => emit({ type: "run_activity", runId, update }) });
       emit({ type: "run_activity", runId, update: { op: "note", text: t("backend.proposalReady") }, settled: true });
       return proposal;
@@ -361,7 +369,8 @@ async function authorChecks(
   let keep = false;
   try {
     emit({ type: "run_activity", runId: "testskript", title: t("backend.testScript"), label: { key: "backend.testScript" } });
-    const trace = await executeAgent({
+    const execute = config.provider.kind === "codex" ? executeWithCodex : executeAgent;
+    const trace = await execute({
       provider: config.provider,
       cwd: iso.dir,
       model: config.targetModel,
@@ -495,7 +504,7 @@ async function runOne(
       attemptTimeoutMs: config.attemptTimeoutMs,
       signal: input.signal,
       onActivity: (update) => emit({ type: "run_activity", runId, update }),
-      execute: (input) => executeAgent({ ...input, provider: config.provider }),
+      execute: config.provider.kind === "codex" ? executeWithCodex : (input) => executeAgent({ ...input, provider: config.provider }),
     });
     emit({
       type: "run_activity",
@@ -555,7 +564,26 @@ function parseSessionId(value: unknown): string {
   return id;
 }
 
-async function readAuth(): Promise<AuthStatus> {
+function parseProvider(value: unknown): ProviderConfig {
+  const kind = typeof value === "string" ? value : value && typeof value === "object" ? (value as Record<string, unknown>).kind : undefined;
+  if (value !== undefined && !isProviderKind(kind)) throw new Error(t("trainer.unknownProvider"));
+  return restoreProvider(value);
+}
+
+async function readAuth(provider: ProviderConfig = { kind: "cursor" }): Promise<AuthStatus> {
+  if (provider.kind === "codex") {
+    try {
+      return await readCodexAuth();
+    } catch (error) {
+      return { state: "error", email: null, via: "none", message: explain(error).message };
+    }
+  }
+  if (provider.kind !== "cursor") {
+    const env = provider.apiKeyEnv?.trim();
+    const authenticated = !env || Boolean(process.env[env]?.trim());
+    return { state: authenticated ? "logged-in" : "logged-out", email: null, via: env && authenticated ? "env" : "none",
+      ...(!authenticated ? { message: t("provider.missingKey", { name: env! }) } : {}) };
+  }
   const viaEnv = Boolean(process.env.CURSOR_API_KEY?.trim());
   try {
     const status = await Cursor.auth.status();
@@ -571,7 +599,14 @@ async function readAuth(): Promise<AuthStatus> {
   return { state: "logged-out", email: null, via: "none" };
 }
 
-async function listModels(provider?: ProviderConfig): Promise<{ models: ModelOption[]; error?: string }> {
+async function listModels(provider: ProviderConfig = { kind: "cursor" }): Promise<{ models: ModelOption[]; error?: string }> {
+  if (provider.kind === "codex") {
+    try {
+      return { models: await listCodexModels() };
+    } catch (error) {
+      return { models: [], error: explain(error).message };
+    }
+  }
   try {
     const config = restoreProvider(provider);
     if (config.kind !== "cursor") return { models: await listCompatibleModels(config) };
@@ -605,6 +640,9 @@ function summarize(summary: SessionSummary): unknown {
 }
 
 function explain(err: unknown): Error {
+  if ((err as NodeJS.ErrnoException | null)?.code === "ENOENT" && /codex/i.test((err as Error).message)) {
+    return new Error(t("codex.notInstalled"));
+  }
   if (err instanceof LocalizedError) {
     const error = new Error(localizedMessage(err, t));
     if (err.name === "AbortError" || err.name === "TimeoutError") error.name = err.name;
