@@ -3,9 +3,10 @@ import { restoreSettings } from "./settings";
 
 describe("restoreSettings", () => {
   it("restores the inference provider and keeps older sessions on Cursor", () => {
-    expect(restoreSettings({ provider: "codex", targetModel: "codex-model" })).toMatchObject({ provider: "codex", targetModel: "codex-model" });
-    expect(restoreSettings({})?.provider).toBe("cursor");
-    expect(restoreSettings({ provider: "unknown" })?.provider).toBe("cursor");
+    expect(restoreSettings({ provider: "codex", targetModel: "codex-model" })).toMatchObject({ provider: { kind: "codex" }, targetModel: "codex-model" });
+    expect(restoreSettings({})?.provider?.kind).toBe("cursor");
+    expect(restoreSettings({ provider: "unknown" })?.provider?.kind).toBe("cursor");
+    expect(restoreSettings({ provider: { kind: "codex" } })?.provider?.kind).toBe("codex");
     expect(restoreSettings({ provider: "codex" })).toMatchObject({ targetModel: "", optimizerModel: "" });
   });
   it("keeps a saved form", () => {
@@ -70,4 +71,14 @@ it("restores workflow, unlimited budgets, and draft-only settings", () => {
   expect(restored).toMatchObject({ workflow: "create", skillName: "my-skill", skillBrief: "A reusable skill.", trainAfterDraft: false, budget, runBudget: null });
   expect(restoreSettings({})?.budget?.maxFileEdits).toBe(4);
   expect(restoreSettings({})?.runBudget).toBe(48);
+});
+
+it("restores provider presets and custom endpoints without retaining inline secrets", () => {
+  expect(restoreSettings({})?.provider?.kind).toBe("cursor");
+  expect(restoreSettings({ provider: { kind: "ollama" } })?.provider).toEqual({
+    kind: "ollama", baseUrl: "http://localhost:11434/v1", apiKeyEnv: "",
+  });
+  expect(restoreSettings({ provider: { kind: "compatible", baseUrl: "https://example.test/api/v1", apiKeyEnv: "MY_KEY", apiKey: "secret" } })?.provider).toEqual({
+    kind: "compatible", baseUrl: "https://example.test/api/v1", apiKeyEnv: "MY_KEY",
+  });
 });

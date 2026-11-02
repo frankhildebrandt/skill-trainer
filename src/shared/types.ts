@@ -1,3 +1,4 @@
+import type { ProviderConfig } from "./provider";
 import type { TranslationKey, TranslationValues } from "./i18n";
 import type { Locale } from "./i18n/types";
 import type { CursorRunCatalog } from "./cursor-runs";
@@ -118,8 +119,6 @@ export type SkillScope = "general" | "specific";
 
 export type SkillWorkflow = "train" | "pretrain" | "create";
 
-export type InferenceProvider = "cursor" | "codex";
-
 export interface OptimizerBudget {
   unlimited: boolean;
   maxEditChars: number;
@@ -136,8 +135,7 @@ export interface SkillDraft {
 }
 
 export interface TrainRequest {
-  /** Older sessions use Cursor when no provider is recorded. */
-  provider?: InferenceProvider;
+  provider?: ProviderConfig;
   workflow?: SkillWorkflow;
   skillName?: string;
   skillBrief?: string;
@@ -208,14 +206,14 @@ export interface TrainerApi {
   loadLocale: () => Promise<Locale>;
   saveLocale: (locale: Locale) => Promise<void>;
   onLocaleChange: (cb: (locale: Locale) => void) => () => void;
-  authStatus: (provider?: InferenceProvider) => Promise<AuthStatus>;
-  authLogin: (provider?: InferenceProvider) => Promise<AuthStatus>;
-  listModels: (provider?: InferenceProvider) => Promise<{ models: ModelOption[]; error?: string }>;
+  authStatus: (provider?: ProviderConfig) => Promise<AuthStatus>;
+  authLogin: (provider?: ProviderConfig) => Promise<AuthStatus>;
+  listModels: (provider?: ProviderConfig) => Promise<{ models: ModelOption[]; error?: string }>;
   pickSkill: () => Promise<string | null>;
   pickSkillDestination: () => Promise<string | null>;
   pickFolder: () => Promise<string | null>;
   listProjectSkills: (workspacePath: string) => Promise<ProjectSkill[]>;
-  deriveSkillFields: (skillPath: string, model: string, provider?: InferenceProvider) => Promise<{ ziel: string; auftrag: string }>;
+  deriveSkillFields: (skillPath: string, model: string, provider?: ProviderConfig) => Promise<{ ziel: string; auftrag: string }>;
   readSkill: (skillPath: string) => Promise<{
     name: string;
     chars: number;

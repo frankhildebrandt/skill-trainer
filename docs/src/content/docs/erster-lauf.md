@@ -9,7 +9,7 @@ Dieser Ablauf führt dich durch ein Fine-Tuning mit einem vorhandenen Skill. Du 
 
 ## 1. Projekt und Skill wählen
 
-Lass **Workflow → Fine-Tuning** ausgewählt und prüfe den **Inference-Anbieter**: Cursor ist voreingestellt, Codex App Server verwendet deine Codex-Anmeldung. Klicke bei **Projekt** auf **Wählen** und öffne den Projektordner. Die App sucht darin nach `SKILL.md`-Dateien. Wenn sie genau einen Skill findet und noch keiner ausgewählt ist, wählt sie diesen automatisch aus.
+Lass **Workflow → Fine-Tuning** ausgewählt und prüfe den **Inference-Anbieter**: Cursor ist voreingestellt. Codex App Server verwendet deine Codex-Anmeldung; weitere Anbieter verwenden den eingestellten API-Endpunkt und gegebenenfalls die Schlüsselvariable. Klicke bei **Projekt** auf **Wählen** und öffne den Projektordner. Die App sucht darin nach `SKILL.md`-Dateien. Wenn sie genau einen Skill findet und noch keiner ausgewählt ist, wählt sie diesen automatisch aus.
 
 Bei mehreren Skills verwendest du das Dropdown. Über **Skill → Wählen** kannst du auch einen Skill außerhalb des Projekts laden. Du darfst den ganzen Skill-Ordner oder seine `SKILL.md` auswählen; Referenzen und Skripte im Ordner werden mitgenommen.
 
@@ -19,7 +19,7 @@ Beschreibe unter **Trainingsauftrag**, was das Zielmodell im Projekt erledigen s
 
 > Ergänze für die Slug-Funktion die Behandlung von Umlauten und mehrfachen Leerzeichen. Die vorhandene API soll erhalten bleiben. Die neuen Tests müssen bestehen.
 
-Über **Aus Cursor-Läufen** kannst du stattdessen den Auftrag eines vorhandenen lokalen oder Cloud-Laufs dieses Repositorys übernehmen. Im Auswahlfenster suchst du in Aufträgen und Antworten, filterst nach **Alle**, **Lokal** oder **Cloud** und bestätigst mit **Übernehmen**. Diese Auswahl zeigt auch bei einer Codex-Sitzung ausschließlich die Cursor-Historie.
+Über **Aus Cursor-Läufen** kannst du stattdessen den Auftrag eines vorhandenen lokalen oder Cloud-Laufs dieses Repositorys übernehmen. Im Auswahlfenster suchst du in Aufträgen und Antworten, filterst nach **Alle**, **Lokal** oder **Cloud** und bestätigst mit **Übernehmen**. Diese Auswahl zeigt bei jedem Inference-Anbieter ausschließlich die Cursor-Historie.
 
 Lass **Weitere Aufträge** für den ersten Versuch leer. Dann verwenden Training und Gate denselben Hauptauftrag, jeweils in eigenen frischen Läufen.
 

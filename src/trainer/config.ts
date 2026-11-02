@@ -1,11 +1,12 @@
+import { isProviderKind, restoreProvider, type ProviderConfig } from "../shared/provider";
 import { translate, type Locale, type Translate } from "../shared/i18n";
 import { DEFAULT_BUDGET } from "../shared/budget";
 import { estimateRuns } from "../shared/estimate";
-import type { InferenceProvider, OptimizerBudget, SkillScope, SkillWorkflow, TrainRequest } from "../shared/types";
+import type { OptimizerBudget, SkillScope, SkillWorkflow, TrainRequest } from "../shared/types";
 import { extraLines } from "./tasks";
 
 export interface NormalizedTrain {
-  provider: InferenceProvider;
+  provider: ProviderConfig;
   workflow: SkillWorkflow;
   skillName: string;
   skillBrief: string;
@@ -34,8 +35,8 @@ export interface NormalizedTrain {
 
 export function normalizeRequest(request: TrainRequest, locale: Locale = "de"): NormalizedTrain {
   const t: Translate = (key, values) => translate(locale, key, values);
-  const provider = request.provider ?? "cursor";
-  if (provider !== "cursor" && provider !== "codex") throw new Error(t("trainer.unknownProvider"));
+  const kind = typeof request.provider === "string" ? request.provider : request.provider?.kind;
+  if (request.provider !== undefined && !isProviderKind(kind)) throw new Error(t("trainer.unknownProvider"));
   const workflow = request.workflow ?? "train";
   if (!["train", "pretrain", "create"].includes(workflow)) throw new Error(t("trainer.unknownWorkflow"));
   const trainAfterDraft = workflow === "train" || request.trainAfterDraft !== false;
@@ -86,7 +87,7 @@ export function normalizeRequest(request: TrainRequest, locale: Locale = "de"): 
   }
 
   return {
-    provider,
+    provider: restoreProvider(request.provider),
     workflow, skillName, skillBrief, trainAfterDraft, budget, runBudget,
     skillPath, workspacePath, auftrag, extraTasks: extras, verifyMode,
     verifyCommand: verifyMode === "agent" ? "" : verifyCommand,

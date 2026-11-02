@@ -1,3 +1,5 @@
+import type { ProviderConfig } from "../shared/provider";
+import { executeCompatibleAgent } from "./openai-runner";
 import { translate, type Translate, type Locale, type TranslationKey } from "../shared/i18n";
 import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { Agent, CursorAgentError, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
@@ -19,6 +21,7 @@ export function isStartupError(err: unknown): boolean {
 }
 
 export async function executeAgent(input: ExecuteRequest): Promise<AgentTrace> {
+  if (input.provider && input.provider.kind !== "cursor") return executeCompatibleAgent({ ...input, provider: input.provider });
   const started = Date.now();
   const agent = await Agent.create({
     model: { id: input.model },
@@ -76,13 +79,14 @@ export async function executeAgent(input: ExecuteRequest): Promise<AgentTrace> {
 }
 
 export async function proposeWithCursor(
-  input: ProposeCall & { model: string; cwd: string; onActivity?: (update: ActivityUpdate) => void; translate?: Translate },
+  input: ProposeCall & { provider?: ProviderConfig; model: string; cwd: string; onActivity?: (update: ActivityUpdate) => void; translate?: Translate },
 ): Promise<Proposal> {
   const t: Translate = input.translate ?? ((key, values) => translate("de", key, values));
   const prompt = buildOptimizerPrompt(input);
   const drafting = input.kind === "create" || input.kind === "pretrain";
   if (drafting && !input.workspacePath?.trim()) throw new LocalizedError("trainer.chooseProject");
   const text = await completeText(input.model, input.cwd, prompt, input.signal, input.onActivity, t, {
+    provider: input.provider,
     inspectDir: drafting ? input.workspacePath : undefined,
   });
   return parseProposal(extractJson(text));
@@ -90,6 +94,7 @@ export async function proposeWithCursor(
 
 /** Reads the selected skill with the chosen model and returns localized form fields. */
 export async function deriveSkillFields(input: {
+  provider?: ProviderConfig;
   model: string;
   skill: string;
   files: SkillFile[];
@@ -100,6 +105,7 @@ export async function deriveSkillFields(input: {
   const t: Translate = input.translate ?? ((key, values) => translate(input.locale ?? "de", key, values));
   const prompt = buildSkillFieldsPrompt({ skill: input.skill, files: input.files, locale: input.locale });
   const text = await completeText(input.model, os.tmpdir(), prompt, input.signal, undefined, t, {
+    provider: input.provider,
     accept: hasSkillFields,
     problem: (reply) => skillFieldsProblem(reply, t),
     abortKey: "runner.analysisCancelled",
@@ -117,6 +123,7 @@ export async function makeOptimizerDir(sessionDir: string): Promise<string> {
 const READ_TOOLS = ["read", "grep", "glob", "ls", "semSearch"] as const;
 
 interface CompleteOptions {
+  provider?: ProviderConfig;
   accept?: (text: string) => boolean;
   problem?: (text: string) => string;
   abortKey?: TranslationKey;
@@ -166,6 +173,28 @@ async function completeTextOnce(
   const accept = options.accept ?? isProposal;
   const problem = options.problem ?? ((text: string) => proposalProblem(text, t));
   const inspectDir = options.inspectDir?.trim();
+  if (options.provider && options.provider.kind !== "cursor") {
+    let text = "";
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await executeCompatibleAgent({
+        provider: options.provider, model, cwd: inspectDir || dir,
+        prompt: `${prompt}\n\n${inspectDir ? "Read the repository with file tools before answering. " : ""}Reply with the JSON object only.${attempt ? " Ensure the JSON is complete and matches the requested schema." : ""}`,
+        signal, timeoutMs: 12 * 60_000, onActivity, readOnly: true, noTools: !inspectDir,
+      });
+      if (result.status === "cancelled") {
+        const error = new LocalizedError(options.abortKey ?? "runner.cancelled");
+        error.name = "AbortError";
+        throw error;
+      }
+      text = result.finalText;
+      if (inspectDir && result.toolCalls === 0) {
+        if (attempt === 1) throw new LocalizedError("runner.unreadCodebase");
+        continue;
+      }
+      if (accept(text)) return text;
+    }
+    return text;
+  }
   const agent = await Agent.create({
     model: { id: model },
     tools: inspectDir ? [...READ_TOOLS] : [],

@@ -5,7 +5,7 @@ section: Start
 order: 10
 ---
 
-Skill Trainer erstellt und verbessert Agent-Skills mit Cursor oder Codex App Server als Inference-Anbieter. Ein Skill besteht aus einer `SKILL.md` und optionalen Referenzen, Skripten oder weiteren Dateien. Die App kann diesen ganzen Ordner überarbeiten. Das Modell selbst bleibt unverändert.
+Skill Trainer erstellt und verbessert Agent-Skills mit Cursor, Codex App Server oder OpenAI-kompatiblen APIs als Inference-Anbieter. Ein Skill besteht aus einer `SKILL.md` und optionalen Referenzen, Skripten oder weiteren Dateien. Die App kann diesen ganzen Ordner überarbeiten. Das Modell selbst bleibt unverändert.
 
 Beim Fine-Tuning bearbeitet ein Zielmodell deinen Auftrag in frischen Projektkopien. Ein zweites, als Optimierer eingesetztes Modell wertet die Ergebnisse aus und schlägt Änderungen am Skill vor. Neue Läufe prüfen anschließend, ob die Kandidatenfassung besser abschneidet. Nur ein höherer Gate-Score wird innerhalb der Sitzung übernommen.
 

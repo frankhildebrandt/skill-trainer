@@ -1,11 +1,11 @@
 ---
 title: Installation und Anmeldung
-description: Skill Trainer aus dem Repository starten und mit Cursor oder Codex verbinden.
+description: Skill Trainer aus dem Repository starten und Cursor, Codex oder OpenAI-kompatible Endpunkte verbinden.
 section: Start
 order: 20
 ---
 
-Skill Trainer läuft als Electron-Desktop-App. Zum Start aus dem Repository benötigst du **Node.js ab Version 22.13**, npm und Git. Als Inference-Anbieter wählst du Cursor oder Codex App Server. Die Anmeldung und die verfügbaren Modelle richten sich nach diesem Anbieter.
+Skill Trainer läuft als Electron-Desktop-App. Zum Start aus dem Repository benötigst du **Node.js ab Version 22.13**, npm und Git. Als Inference-Anbieter wählst du Cursor, Codex App Server oder einen OpenAI-kompatiblen API-Endpunkt. Anmeldung beziehungsweise API-Schlüssel und verfügbare Modelle richten sich nach dem gewählten Anbieter.
 
 Die Projektkopien verwenden außerdem `tar` und beim Kopieren vorhandener `node_modules`-, `.venv`- oder `venv`-Ordner den Befehl `cp -cR`. Diese Clone-Option steht unter macOS zur Verfügung. Prüfe sie auf anderen Systemen; die aktuelle Implementierung enthält dafür keinen Ersatz.
 
@@ -50,9 +50,17 @@ codex login status
 
 Skill Trainer startet den App Server selbst als lokalen Unterprozess und kommuniziert über `stdio`. Du musst keinen Server und keinen Port einrichten. Die gewählte Codex-Anmeldung bestimmt den Modellzugang und die Abrechnung.
 
-Die Anbieterwahl gilt pro Trainings-Tab für Training, Optimierer, Entwürfe, Skill-Analyse und Testskripterstellung. Die Kopfzeile zeigt den Anmeldestatus des aktiven Tabs. Bei einem Anbieterwechsel wählst du Modelle aus dessen eigener Liste. Ältere gespeicherte Einstellungen verwenden weiterhin Cursor.
+Die Anbieterwahl gilt pro Trainings-Tab für Training, Optimierer, Entwürfe, Skill-Analyse und Testskripterstellung. Die Kopfzeile zeigt den Anbieter des aktiven Tabs und bei Cursor oder Codex dessen Anmeldestatus. Bei einem Anbieterwechsel wählst du Modelle aus dessen eigener Liste. Ältere gespeicherte Einstellungen verwenden weiterhin Cursor.
 
 Edit- und Laufbudgets sind Grenzen der App; sie sind kein Geld- oder Tokenbudget.
+
+## OpenAI, OpenRouter oder lokale Server verwenden
+
+Wähle im Trainingsformular den Anbieter. OpenAI und OpenRouter verwenden standardmäßig die Umgebungsvariablen `OPENAI_API_KEY` beziehungsweise `OPENROUTER_API_KEY`. Setze den Schlüssel in der Umgebung, aus der du `npm run dev` startest. Im Formular steht nur der Variablenname; Schlüsselwerte werden nicht in Einstellungen oder Sitzungsdateien gespeichert.
+
+Bei Ollama, MLX und LM Studio starte zuerst den jeweiligen lokalen Server und lade ein Modell mit Tool-Calling-Unterstützung. Die App setzt passende lokale API-Basis-URLs ein, die du anpassen kannst. Bei einem Server ohne Anmeldung bleibt das Feld für die Schlüsselvariable leer. Trage in Zielmodell und Optimierer die Modell-ID des Servers ein oder wähle aus dessen Modellliste.
+
+Für diese API-Endpunkte ist keine Browser-Anmeldung über die Kopfzeile nötig. Sie verwenden die eingestellte Schlüsselvariable oder bei lokalen Servern einen Zugang ohne Schlüssel. Alle URL-Vorgaben und Optionen stehen unter [Einstellungen](/docs/einstellungen/#anbieter-und-api-endpunkt).
 
 ## Projekt vorbereiten
 

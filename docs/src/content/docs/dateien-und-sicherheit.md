@@ -1,6 +1,6 @@
 ---
 title: Dateien, Kopien und Datenfluss
-description: Projektkopien, Skill-Backups, Sitzungsdateien und den Datenfluss über Cursor oder Codex verstehen.
+description: Projektkopien, Skill-Backups, Sitzungsdateien und den Datenfluss zu den Modellanbietern verstehen.
 section: Referenz
 order: 90
 ---
@@ -60,7 +60,7 @@ Das Cursor-SDK speichert außerdem lokale Agent-Unterlagen in `agent-store`-Verz
 
 ## Was geht an den Inference-Anbieter?
 
-Die Modellaufrufe laufen je nach gewähltem Anbieter über das Cursor-SDK oder den lokalen Codex App Server. Das Zielmodell erhält Auftrag, Prüfbefehl, Skill-Text und Zugriff auf die Dateien der jeweiligen Laufkopie. Inhalte, die es durch Werkzeuge liest, können damit in den Modellkontext gelangen. Der lokale Codex-Unterprozess ist keine Offline-Inference; er verwendet den über Codex konfigurierten Modellzugang.
+Die Modellaufrufe laufen je nach gewähltem Anbieter über das Cursor-SDK, den lokalen Codex App Server oder direkt an die eingestellte OpenAI-kompatible API-Basis-URL. Das Zielmodell erhält Auftrag, Prüfbefehl, Skill-Text und Zugriff auf die Dateien der jeweiligen Laufkopie. Inhalte, die es durch Werkzeuge liest, können damit in den Modellkontext gelangen. Der lokale Codex-Unterprozess verwendet den über Codex konfigurierten Modellzugang. Bei OpenAI-kompatiblen Endpunkten bestimmt die Basis-URL, ob die Anfrage einen lokalen Modellserver oder einen entfernten Dienst erreicht. Benötigte API-Schlüssel werden aus der eingestellten Umgebungsvariable gelesen; in den Sitzungsdateien stehen nur URL und Variablenname.
 
 Der Optimierer erhält den aktuellen Skill und die vollständigen Texte seiner Text-Begleitdateien. Dazu kommen zusammengefasste Ausgaben, Diffs und Prüfresultate der Trainingsläufe sowie Informationen zu verworfenen Kandidaten. Binäre Begleitdateien werden als Binärdateien aufgeführt und mitkopiert; ihr Inhalt wird nicht als Text an den Optimierer angehängt.
 
@@ -68,7 +68,7 @@ Beim Fine-Tuning erhalten die Optimierer-Agenten keine Dateiwerkzeuge und sollen
 
 ## Shell und Ausführungsrechte
 
-Normale Projektagenten verwenden die lokalen Werkzeuge ihres Anbieters. Die App setzt ihr Arbeitsverzeichnis auf die Kopie und weist sie an, nur darin zu arbeiten. Codex verwendet dafür seinen Modus `workspace-write`. Das ist keine eigene Container- oder VM-Grenze.
+Normale Projektagenten verwenden die lokalen Werkzeuge ihrer Anbindung. Die OpenAI-kompatible Anbindung stellt eigene Dateiwerkzeuge und ein Werkzeug für Shell-Befehle bereit. Die App setzt ihr Arbeitsverzeichnis auf die Kopie und weist sie an, nur darin zu arbeiten. Codex verwendet dafür seinen Modus `workspace-write`. Das ist keine eigene Container- oder VM-Grenze.
 
 Im leeren Gate beschränkt die App die Agent-Dateiwerkzeuge auf das Lauf-Repository und stellt dem Zielagenten keine Shell bereit. Bei Codex werden dafür die nativen Umgebungswerkzeuge deaktiviert und kontrollierte Dateiwerkzeuge bereitgestellt. Auch Entwürfe erhalten nur lesende Dateiwerkzeuge; Fine-Tuning-Optimierer und Skill-Analyse erhalten keine Dateiwerkzeuge. Der Trainer führt den Prüfbefehl anschließend dennoch lokal aus.
 
