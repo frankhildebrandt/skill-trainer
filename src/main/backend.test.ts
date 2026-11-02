@@ -128,7 +128,6 @@ describe("skill workflow IPC", () => {
 
   it("stops before fine-tuning when an empty repository already passes the check", async () => {
     const workspacePath = path.join(root, "project");
-    await fs.mkdir(workspacePath);
     mocks.propose.mockResolvedValue(proposal());
     mocks.verify.mockResolvedValue({ exitCode: 0, output: "already green" });
     await start(request({ trainAfterDraft: true, gateOnEmptyRepo: true, workspacePath, auftrag: "Implement the parser.", verifyCommand: "npm test" }));
@@ -275,4 +274,17 @@ describe("localized skill analysis IPC", () => {
     await expect(mocks.handlers.get("skill:derive")!(null, skill, "composer-2.5"))
       .rejects.toThrow("Analyse mislukt.");
   });
+});
+
+
+it("passes the saved provider to drafting and analysis without saving inline credentials", async () => {
+  const provider = { kind: "openrouter" as const, baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: "OPENROUTER_API_KEY" };
+  mocks.propose.mockResolvedValue(proposal());
+  const result = await start(request({ provider }));
+  expect(mocks.propose).toHaveBeenCalledWith(expect.objectContaining({ provider }));
+  const saved = JSON.parse(await fs.readFile(path.join(result.sessionDir, "request.json"), "utf8"));
+  expect(saved.provider).toEqual(provider);
+  mocks.derive.mockResolvedValue({ ziel: "Goal", auftrag: "Task" });
+  await mocks.handlers.get("skill:derive")!(null, path.join(result.sessionDir, "best-skill"), "custom-model", provider);
+  expect(mocks.derive).toHaveBeenCalledWith(expect.objectContaining({ provider, model: "custom-model" }));
 });

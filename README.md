@@ -11,9 +11,26 @@ npm run docs:dev
 
 Die Startseite stellt die App mit Screenshots vor. Unter `/skill-trainer/docs/` folgen Einstieg, Workflows, Prüfung, Ergebnisse und eine vollständige Referenz aller Einstellungen und Schalter. `npm run docs:check` prüft die Astro-Dateien; `npm run docs:build` baut die statische Website und prüft ihre internen Links. GitHub Actions prüft Website-Änderungen in Pull Requests und veröffentlicht sie nach einem Push auf `main` automatisch auf GitHub Pages.
 
-Trainiert eine `SKILL.md` gegen einen Projektordner und einen Auftrag. Die Läufe gehen über das Cursor-SDK und damit über dein Cursor-Abo. Electron, weil das SDK in Node läuft.
+Trainiert eine `SKILL.md` gegen einen Projektordner und einen Auftrag. Die Läufe gehen wahlweise über das Cursor-SDK und dein Cursor-Abo oder über OpenAI, OpenRouter und OpenAI-kompatible Endpunkte. Electron, weil das SDK in Node läuft.
 
 Das Fine-Tuning folgt [SkillOpt](https://microsoft.github.io/SkillOpt/) von Microsoft Research: der Skill-Ordner ist der trainierbare Zustand, das Modell bleibt fest. Der Optimierer kann die gesamte `SKILL.md` umschreiben, Frontmatter ändern und Referenzen oder Skripte anlegen, ändern und löschen. Eine Fine-Tuning-Fassung wird nur behalten, wenn sie auf frischen Läufen des Hauptauftrags einen höheren Gate-Score hat. Gleichstand zählt als Ablehnung.
+
+## Anbieter und lokale Modelle
+
+Im Formular gilt **Anbieter** für Zielmodell und Optimierer sowie „Mit Modell füllen“. Cursor bleibt die Voreinstellung. Andere Anbieter brauchen keine Cursor-Anmeldung; die Anzeige oben im Fenster bezieht sich ausschließlich auf Cursor.
+
+- **OpenAI:** `https://api.openai.com/v1`, Schlüssel aus `OPENAI_API_KEY`.
+- **OpenRouter:** `https://openrouter.ai/api/v1`, Schlüssel aus `OPENROUTER_API_KEY`.
+- **Ollama:** `http://localhost:11434/v1` (Server mit `ollama serve` starten).
+- **MLX:** `http://localhost:8080/v1` (zum Beispiel `mlx_lm.server --model <Modell-ID>`).
+- **LM Studio:** `http://localhost:1234/v1` (Modell laden und lokalen Server starten).
+- **OpenAI-kompatibel:** frei wählbare API-Basis-URL, einschließlich eigener Proxy-Pfade.
+
+Basis-URL und Name der Schlüssel-Umgebungsvariable sind anpassbar. Die URL enthält das API-Präfix wie `/v1`, ohne `/chat/completions`. Setze benötigte Schlüssel vor dem App-Start in der Umgebung des App-Prozesses. Bei lokalen Servern ohne Anmeldung bleibt das Variablenfeld leer. Gespeichert werden nur URL und Variablenname, keine Schlüsselwerte.
+
+Die App lädt Modelle über `GET /models`. Du kannst Modell-IDs auch direkt eingeben, falls ein Endpunkt keine Modellliste anbietet. Beim Anbieterwechsel werden die Modellfelder geleert; wähle Zielmodell und Optimierer erneut.
+
+Die Anbindung verwendet [Chat Completions mit Function Calling](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). Trainingsläufe haben Werkzeuge zum Lesen, Auflisten, Schreiben und Löschen von Dateien und in Projektkopien zum Ausführen von Shell-Befehlen. Im leeren Gate entfällt die Shell. Entwürfe dürfen das Projekt nur lesen; Optimierung und Formularanalyse erhalten ohne Projektanalyse keine Werkzeuge. Das gewählte Modell und der Server müssen Tool Calling unterstützen, damit der Agent die Codebase lesen und bearbeiten kann. Das gilt auch für [Ollama](https://docs.ollama.com/api/openai-compatibility), [MLX-LM](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/server.py) und [LM Studio](https://lmstudio.ai/docs/developer/openai-compat). Antworten werden nach jeder abgeschlossenen Modellrunde angezeigt. Anbieterfehler und unvollständige Antworten brechen den Lauf mit einer Fehlermeldung ab.
 
 ## Workflows und Budgets
 

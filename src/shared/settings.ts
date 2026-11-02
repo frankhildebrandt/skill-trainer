@@ -1,3 +1,4 @@
+import { restoreProvider } from "./provider";
 import type { TrainRequest } from "./types";
 import { restoreBudget } from "./budget";
 
@@ -26,6 +27,7 @@ const DEFAULTS: TrainRequest = {
 export function restoreSettings(raw: unknown): TrainRequest | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
+  const provider = restoreProvider(record.provider);
   const extra = record.extraTasks;
   const extraTasks = Array.isArray(extra)
     ? extra.filter((line): line is string => typeof line === "string" && line.trim().length > 0).join("\n")
@@ -34,6 +36,7 @@ export function restoreSettings(raw: unknown): TrainRequest | null {
       : DEFAULTS.extraTasks;
 
   return {
+    provider,
     workflow: record.workflow === "create" || record.workflow === "pretrain" ? record.workflow : "train",
     skillName: text(record.skillName, ""),
     skillBrief: text(record.skillBrief, ""),
@@ -46,8 +49,8 @@ export function restoreSettings(raw: unknown): TrainRequest | null {
     extraTasks,
     verifyMode: record.verifyMode === "agent" ? "agent" : "command",
     verifyCommand: text(record.verifyCommand, ""),
-    targetModel: text(record.targetModel, DEFAULTS.targetModel),
-    optimizerModel: text(record.optimizerModel, DEFAULTS.optimizerModel),
+    targetModel: text(record.targetModel, provider.kind === "cursor" ? DEFAULTS.targetModel : ""),
+    optimizerModel: text(record.optimizerModel, provider.kind === "cursor" ? DEFAULTS.optimizerModel : ""),
     steps: numberOr(record.steps, DEFAULTS.steps),
     trainBatch: numberOr(record.trainBatch, DEFAULTS.trainBatch),
     selectionRepeats: numberOr(record.selectionRepeats, DEFAULTS.selectionRepeats),

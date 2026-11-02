@@ -65,3 +65,13 @@ it("restores workflow, unlimited budgets, and draft-only settings", () => {
   expect(restoreSettings({})?.budget?.maxFileEdits).toBe(4);
   expect(restoreSettings({})?.runBudget).toBe(48);
 });
+
+it("restores provider presets and custom endpoints without retaining inline secrets", () => {
+  expect(restoreSettings({})?.provider?.kind).toBe("cursor");
+  expect(restoreSettings({ provider: { kind: "ollama" } })?.provider).toEqual({
+    kind: "ollama", baseUrl: "http://localhost:11434/v1", apiKeyEnv: "",
+  });
+  expect(restoreSettings({ provider: { kind: "compatible", baseUrl: "https://example.test/api/v1", apiKeyEnv: "MY_KEY", apiKey: "secret" } })?.provider).toEqual({
+    kind: "compatible", baseUrl: "https://example.test/api/v1", apiKeyEnv: "MY_KEY",
+  });
+});

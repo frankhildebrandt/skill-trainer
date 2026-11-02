@@ -1,3 +1,4 @@
+import type { ProviderConfig } from "../shared/provider";
 import { translate, type Translate } from "../shared/i18n";
 import { LocalizedError } from "../shared/localized-error";
 import path from "node:path";
@@ -25,6 +26,7 @@ export interface AgentTrace {
 }
 
 export interface ExecuteRequest {
+  provider?: ProviderConfig;
   cwd: string;
   model: string;
   prompt: string;
