@@ -7,6 +7,7 @@ import { applyRunUpdate, type RunBlock } from "@shared/run-log";
 import { changedLines } from "@shared/text-diff";
 import type {
   AuthStatus,
+  InferenceProvider,
   LocalizedLabel,
   ModelOption,
   ProjectSkill,
@@ -73,11 +74,14 @@ interface TrainingTab {
   initialForm: TrainRequest;
 }
 
+type ProviderCatalogs = Record<InferenceProvider, { models: ModelOption[]; error?: string }>;
+
 function newTrainingTab(ordinal: number, form: TrainRequest): TrainingTab {
   return { id: crypto.randomUUID(), ordinal, initialForm: structuredClone(form) };
 }
 
 const EMPTY: TrainRequest = {
+  provider: "cursor",
   workflow: "train",
   skillName: "",
   skillBrief: "",
@@ -106,23 +110,32 @@ const EMPTY: TrainRequest = {
 export function App() {
   const { locale, setLocale, t, saveError } = useI18n();
   const api = window.trainer;
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [auth, setAuth] = useState<AuthStatus | null>(null);
-  const [models, setModels] = useState<ModelOption[]>([{ id: "composer-2.5", label: "Composer 2.5" }]);
+  const [loggingInFor, setLoggingInFor] = useState<InferenceProvider | null>(null);
+  const [authByProvider, setAuthByProvider] = useState<Record<InferenceProvider, AuthStatus | null>>({ cursor: null, codex: null });
+  const [catalogs, setCatalogs] = useState<ProviderCatalogs>({ cursor: { models: [{ id: "composer-2.5", label: "Composer 2.5" }] }, codex: { models: [] } });
   const [tabs, setTabs] = useState<TrainingTab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, TabSnapshot>>({});
   const ordinals = useRef(0);
+  const providerGenerations = useRef<Record<InferenceProvider, number>>({ cursor: 0, codex: 0 });
 
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
-    void api.authStatus().then((status) => {
-      if (!cancelled) setAuth(status);
-    }).catch(() => undefined);
-    void api.listModels().then((result) => {
-      if (!cancelled && result.models.length > 0) setModels(result.models);
-    });
+    for (const provider of ["cursor", "codex"] as const) {
+      const generation = ++providerGenerations.current[provider];
+      const current = () => !cancelled && generation === providerGenerations.current[provider];
+      void api.authStatus(provider).then((status) => {
+        if (current()) setAuthByProvider((prev) => ({ ...prev, [provider]: status }));
+      }).catch((error: unknown) => {
+        if (current()) setAuthByProvider((prev) => ({ ...prev, [provider]: { state: "error", email: null, via: "none", message: messageOf(error) } }));
+      });
+      void api.listModels(provider).then((result) => {
+        if (current()) setCatalogs((prev) => ({ ...prev, [provider]: result }));
+      }).catch((error: unknown) => {
+        if (current()) setCatalogs((prev) => ({ ...prev, [provider]: { models: [], error: messageOf(error) } }));
+      });
+    }
     void api.loadSettings().then((saved) => {
       if (cancelled) return;
       const tab = newTrainingTab(++ordinals.current, saved ?? EMPTY);
@@ -144,6 +157,11 @@ export function App() {
   }
 
   const runningCount = Object.values(snapshots).filter((snapshot) => snapshot.running).length;
+  const activeForm = (activeId && snapshots[activeId]?.form) || tabs.find((tab) => tab.id === activeId)?.initialForm;
+  const provider = activeForm?.provider ?? "cursor";
+  const providerLabel = provider === "codex" ? "Codex App Server" : "Cursor";
+  const auth = authByProvider[provider];
+  const loggingIn = loggingInFor === provider;
   const loggedIn = auth?.state === "logged-in";
 
   function rememberSnapshot(snapshot: TabSnapshot) {
@@ -193,16 +211,19 @@ export function App() {
   }
 
   async function login() {
-    setLoggingIn(true);
+    const selected = provider;
+    const generation = ++providerGenerations.current[selected];
+    setLoggingInFor(selected);
     try {
-      const next = await api.authLogin();
-      setAuth(next);
-      const listed = await api.listModels();
-      if (listed.models.length > 0) setModels(listed.models);
+      const next = await api.authLogin(selected);
+      if (generation !== providerGenerations.current[selected]) return;
+      setAuthByProvider((prev) => ({ ...prev, [selected]: next }));
+      const listed = await api.listModels(selected);
+      if (generation === providerGenerations.current[selected]) setCatalogs((prev) => ({ ...prev, [selected]: listed }));
     } catch (err) {
-      setAuth({ state: "error", email: null, via: "none", message: messageOf(err) });
+      if (generation === providerGenerations.current[selected]) setAuthByProvider((prev) => ({ ...prev, [selected]: { state: "error", email: null, via: "none", message: messageOf(err) } }));
     } finally {
-      setLoggingIn(false);
+      setLoggingInFor(null);
     }
   }
 
@@ -278,11 +299,11 @@ export function App() {
             ) : null}
           </div>
           <div className="auth">
-            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}>
+            <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={`${providerLabel} · ${loggingIn ? t("app.browserOpen") : authLabel(auth, t)}`}>
               <span className="pill-dot" aria-hidden="true" />
               {(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}
             </span>
-            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0 || loggingIn}>
+            <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0 || loggingInFor !== null} title={providerLabel}>
               {t("app.login")}
             </button>
           </div>
@@ -296,7 +317,7 @@ export function App() {
           ordinal={tab.ordinal}
           initialForm={tab.initialForm}
           active={tab.id === activeId}
-          models={models}
+          catalogs={catalogs}
           onSnapshot={rememberSnapshot}
         />
       ))}
@@ -309,19 +330,21 @@ function TrainingSession({
   ordinal,
   initialForm,
   active,
-  models,
+  catalogs,
   onSnapshot,
 }: {
   sessionId: string;
   ordinal: number;
   initialForm: TrainRequest;
   active: boolean;
-  models: ModelOption[];
+  catalogs: ProviderCatalogs;
   onSnapshot: (snapshot: TabSnapshot) => void;
 }) {
   const { locale, t } = useI18n();
   const api = window.trainer;
   const [form, setForm] = useState<TrainRequest>(initialForm);
+  const provider = form.provider ?? "cursor";
+  const models = catalogs[provider].models;
   const [skillInfo, setSkillInfo] = useState<{ name: string; fileCount: number } | null>(null);
   const skillName = skillInfo ? skillLabel(skillInfo, t) : null;
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
@@ -356,6 +379,21 @@ function TrainingSession({
     seenAgents.current.add(runId);
     pushFeed({ type: "agent", runId });
   }
+
+  function changeProvider(next: InferenceProvider) {
+    deriveGen.current += 1;
+    const model = catalogs[next].models[0]?.id ?? "";
+    setForm((prev) => ({ ...prev, provider: next, targetModel: model, optimizerModel: model }));
+  }
+
+  useEffect(() => {
+    const model = models[0]?.id;
+    if (!model || running || deriving) return;
+    setForm((prev) => {
+      if ((prev.provider ?? "cursor") !== provider || (prev.targetModel && prev.optimizerModel)) return prev;
+      return { ...prev, targetModel: prev.targetModel || model, optimizerModel: prev.optimizerModel || model };
+    });
+  }, [models, provider, running, deriving]);
 
   useEffect(() => {
     if (!api || !active) return;
@@ -578,7 +616,7 @@ function TrainingSession({
     const label = models.find((item) => item.id === model)?.label ?? model;
     pushFeed({ type: "note", text: t("runner.readingSkill", { model: label }) });
     try {
-      const fields = await api.deriveSkillFields(skillPath, model);
+      const fields = await api.deriveSkillFields(skillPath, model, provider);
       if (generation !== deriveGen.current) return;
       setForm((prev) => ({ ...prev, skillBrief: fields.ziel, auftrag: fields.auftrag }));
       pushFeed({ type: "note", text: t("runner.fieldsFilled") });
@@ -662,10 +700,12 @@ function TrainingSession({
               form={form}
               running={running}
               models={models}
+              modelError={catalogs[provider].error}
               skillName={skillName}
               projectSkills={projectSkills}
               skillsNote={skillsNote}
               onChange={setForm}
+              onProviderChange={changeProvider}
               onChooseSkill={() => void chooseSkill()}
               onChooseDestination={() => void chooseDestination()}
               onChooseFolder={() => void chooseFolder()}

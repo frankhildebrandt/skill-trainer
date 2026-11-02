@@ -27,6 +27,11 @@ function request(overrides: Partial<TrainRequest> = {}): TrainRequest {
 }
 
 describe("normalizeRequest", () => {
+  it("selects Codex explicitly and keeps existing sessions on Cursor", () => {
+    expect(normalizeRequest(request()).provider).toBe("cursor");
+    expect(normalizeRequest(request({ provider: "codex", targetModel: "codex-model" })).provider).toBe("codex");
+    expect(() => normalizeRequest(request({ provider: "unknown" as never }), "en")).toThrow("Unknown inference provider.");
+  });
   it("accepts an agent-written check without a user command", () => {
     const config = normalizeRequest(request({ verifyMode: "agent", verifyCommand: "" }));
     expect(config.verifyMode).toBe("agent");

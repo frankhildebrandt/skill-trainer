@@ -1,6 +1,6 @@
 ---
 title: Dateien, Kopien und Datenfluss
-description: Projektkopien, Skill-Backups, Sitzungsdateien und den Cursor-SDK-Datenfluss verstehen.
+description: Projektkopien, Skill-Backups, Sitzungsdateien und den Datenfluss über Cursor oder Codex verstehen.
 section: Referenz
 order: 90
 ---
@@ -25,7 +25,7 @@ Eine Auswahl der `SKILL.md` lädt den zugehörigen Skill-Ordner mit. Die App nim
 
 Für die Läufe wird die aktuelle Fassung einschließlich neuer und gelöschter Dateien bereitgestellt. Liegt der Skill innerhalb des Projekts, wird er an seinem ursprünglichen relativen Ort und unter `.cursor/skills/…` platziert. Bei externen Skills verwendet die App den Cursor-Skill-Pfad in der Kopie. Der Text der `SKILL.md` steht zusätzlich direkt im Agent-Prompt.
 
-Projektbezogene Cursor-Settings sind in normalen Projektläufen aktiv; globale Settings werden nicht als Quelle geladen. Im leeren Gate werden auch Projekt-Settings deaktiviert.
+Projektbezogene Cursor-Settings sind in normalen Projektläufen aktiv; globale Cursor-Settings werden nicht als Quelle geladen. Im leeren Gate werden auch Projekt-Settings deaktiviert. Codex deaktiviert globale Skills und konfigurierte MCP-Server für die Inference-Läufe, ohne die Nutzerkonfiguration dauerhaft zu ändern. Der zu bewertende Skill wird direkt mitgegeben.
 
 ## Wann wird der ursprüngliche Skill geändert?
 
@@ -56,20 +56,20 @@ Die App legt Sitzungen im Electron-User-Data-Verzeichnis unter `sessions/` ab. *
 | `runs/` | Laufunterlagen und gegebenenfalls erhaltene fehlgeschlagene Kopien. |
 | `optimizer/` | Unterlagen der Optimierer-Läufe. |
 
-Das SDK speichert außerdem lokale Agent-Unterlagen in `agent-store`-Verzeichnissen im Sitzungsbaum. Formulareinstellungen liegen separat in `settings.json` im User-Data-Verzeichnis. Die App lädt diese beim nächsten Start; sie stellt damit nicht alle geöffneten Laufansichten wieder her.
+Das Cursor-SDK speichert außerdem lokale Agent-Unterlagen in `agent-store`-Verzeichnissen im Sitzungsbaum. Formulareinstellungen einschließlich des Inference-Anbieters liegen separat in `settings.json` im User-Data-Verzeichnis. Die App lädt diese beim nächsten Start; sie stellt damit nicht alle geöffneten Laufansichten wieder her.
 
-## Was geht an Cursor?
+## Was geht an den Inference-Anbieter?
 
-Die Modellaufrufe laufen über das Cursor-SDK. Das Zielmodell erhält Auftrag, Prüfbefehl, Skill-Text und Zugriff auf die Dateien der jeweiligen Laufkopie. Inhalte, die es durch Werkzeuge liest, können damit in den Modellkontext gelangen.
+Die Modellaufrufe laufen je nach gewähltem Anbieter über das Cursor-SDK oder den lokalen Codex App Server. Das Zielmodell erhält Auftrag, Prüfbefehl, Skill-Text und Zugriff auf die Dateien der jeweiligen Laufkopie. Inhalte, die es durch Werkzeuge liest, können damit in den Modellkontext gelangen. Der lokale Codex-Unterprozess ist keine Offline-Inference; er verwendet den über Codex konfigurierten Modellzugang.
 
 Der Optimierer erhält den aktuellen Skill und die vollständigen Texte seiner Text-Begleitdateien. Dazu kommen zusammengefasste Ausgaben, Diffs und Prüfresultate der Trainingsläufe sowie Informationen zu verworfenen Kandidaten. Binäre Begleitdateien werden als Binärdateien aufgeführt und mitkopiert; ihr Inhalt wird nicht als Text an den Optimierer angehängt.
 
-Die Optimierer-Agenten erhalten keine Werkzeuge und sollen ausschließlich Änderungsvorschläge liefern. Eine zusätzliche lokale Kopie bedeutet deshalb nicht, dass die Verarbeitung offline bleibt. Lokale Sitzungsdateien können außerdem Projektinformationen und Agent-Ausgaben enthalten.
+Beim Fine-Tuning erhalten die Optimierer-Agenten keine Dateiwerkzeuge und sollen ausschließlich Änderungsvorschläge liefern. Für Create Skill und Vortraining lesen sie vorher die ausgewählte Codebase, ohne sie zu verändern. Lokale Sitzungsdateien können Projektinformationen und Agent-Ausgaben enthalten.
 
 ## Shell und Ausführungsrechte
 
-Normale Projektagenten verwenden die lokalen Werkzeuge des Cursor-SDK. Die App setzt ihr Arbeitsverzeichnis auf die Kopie und weist sie an, nur darin zu arbeiten. Das ist keine eigene Container- oder VM-Grenze.
+Normale Projektagenten verwenden die lokalen Werkzeuge ihres Anbieters. Die App setzt ihr Arbeitsverzeichnis auf die Kopie und weist sie an, nur darin zu arbeiten. Codex verwendet dafür seinen Modus `workspace-write`. Das ist keine eigene Container- oder VM-Grenze.
 
-Im leeren Gate beschränkt die App die Agent-Dateiwerkzeuge auf das Lauf-Repository und stellt dem Zielagenten keine Shell bereit. Der Trainer führt den Prüfbefehl anschließend dennoch lokal aus.
+Im leeren Gate beschränkt die App die Agent-Dateiwerkzeuge auf das Lauf-Repository und stellt dem Zielagenten keine Shell bereit. Bei Codex werden dafür die nativen Umgebungswerkzeuge deaktiviert und kontrollierte Dateiwerkzeuge bereitgestellt. Auch Entwürfe erhalten nur lesende Dateiwerkzeuge; Fine-Tuning-Optimierer und Skill-Analyse erhalten keine Dateiwerkzeuge. Der Trainer führt den Prüfbefehl anschließend dennoch lokal aus.
 
 Eigene oder vom Agenten erzeugte Prüfbefehle laufen mit der Umgebung der App. Ein absoluter Pfad in einem Skript wird nicht automatisch auf die Projektkopie umgeschrieben. Prüfe deshalb die verwendeten Befehle und neue Skill-Skripte wie anderen lokal ausgeführten Code.

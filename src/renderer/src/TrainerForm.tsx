@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { matchesSkill } from "@shared/project-skill";
-import type { ModelOption, ProjectSkill, TrainRequest } from "@shared/types";
+import type { InferenceProvider, ModelOption, ProjectSkill, TrainRequest } from "@shared/types";
 import { BudgetFields } from "./BudgetFields";
 import { NumberField } from "./NumberField";
 import { useI18n } from "./i18n";
@@ -9,10 +9,12 @@ export function TrainerForm({
   form,
   running,
   models,
+  modelError,
   skillName,
   projectSkills,
   skillsNote,
   onChange,
+  onProviderChange,
   onChooseSkill,
   onChooseDestination,
   onChooseFolder,
@@ -24,10 +26,12 @@ export function TrainerForm({
   running: boolean;
   deriving: boolean;
   models: ModelOption[];
+  modelError?: string;
   skillName: string | null;
   projectSkills: ProjectSkill[];
   skillsNote: string | null;
   onChange: (form: TrainRequest) => void;
+  onProviderChange: (provider: InferenceProvider) => void;
   onChooseSkill: () => void;
   onChooseDestination: () => void;
   onChooseFolder: () => void;
@@ -52,6 +56,15 @@ export function TrainerForm({
 
   return (
     <>
+      <label>
+        {t("form.provider")}
+        <select value={form.provider ?? "cursor"} disabled={locked} onChange={(event) => onProviderChange(event.target.value as InferenceProvider)}>
+          <option value="cursor">Cursor</option>
+          <option value="codex">Codex App Server</option>
+        </select>
+        {form.provider === "codex" ? <small>{t("form.codexSetup")}</small> : null}
+        {modelError ? <small role="status">{modelError}</small> : null}
+      </label>
       <label>
         {t("form.workflow")}
         <select value={workflow} disabled={locked} onChange={(event) => changeWorkflow(event.target.value as typeof workflow)}>
@@ -307,11 +320,13 @@ function ModelField({ label, models, value, disabled, onChange }: {
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t } = useI18n();
   const choices = !value || models.some((model) => model.id === value) ? models : [{ id: value, label: value }, ...models];
   return (
     <label>
       {label}
       <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        {!value ? <option value="">{t("runner.noModel")}</option> : null}
         {choices.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
       </select>
     </label>

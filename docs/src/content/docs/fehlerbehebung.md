@@ -18,9 +18,11 @@ Im normalen Browser läuft die Desktop-App nicht; sie benötigt die Electron-Anb
 
 ## Anmeldung oder Modellaufruf schlägt fehl
 
-Klicke oben auf **Anmelden** und schließe die Browser-Anmeldung ab. Wenn du einen API-Key verwendest, muss `CURSOR_API_KEY` in der Umgebung des Prozesses verfügbar sein, der die App startet. Eine Variable in einem anderen Terminal wird nicht automatisch übernommen.
+Prüfe zuerst den **Inference-Anbieter** im aktiven Trainings-Tab. Klicke oben auf **Anmelden** und schließe die Browser-Anmeldung für diesen Anbieter ab. Bei Cursor muss ein alternativ verwendeter API-Key als `CURSOR_API_KEY` in der Umgebung des Prozesses verfügbar sein, der die App startet. Eine Variable in einem anderen Terminal wird nicht automatisch übernommen.
 
 Nach der Anmeldung lädt die App die Modellliste erneut. Wenn nur das vorausgewählte Composer-Modell erscheint, prüfe die Cursor-Verbindung und die Fehlermeldung im Verlauf.
+
+Bei **Codex App Server** muss die App `codex` finden können. Prüfe im selben Terminal `codex --version` und `codex login status`; melde dich bei Bedarf mit `codex login` an und starte die App erneut. Bei einer Installation außerhalb des `PATH` und der üblichen Installationsverzeichnisse kannst du `CODEX_APP_SERVER_BIN` auf den vollständigen Pfad zur ausführbaren Datei setzen. Aktualisiere ältere Codex-Versionen auf mindestens **0.166.0**, damit das benötigte App-Server-Protokoll verfügbar ist. Es muss keine separat gestartete Serverinstanz laufen. Eine leere Codex-Modellliste ist kein Grund, ein Cursor-Modell einzutragen; prüfe die angezeigte Codex-Fehlermeldung und Anmeldung.
 
 ## „Der Prüfbefehl ist … schon erfolgreich“
 

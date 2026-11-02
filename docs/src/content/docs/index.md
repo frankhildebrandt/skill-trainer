@@ -5,7 +5,7 @@ section: Start
 order: 10
 ---
 
-Skill Trainer erstellt und verbessert Agent-Skills für Cursor. Ein Skill besteht aus einer `SKILL.md` und optionalen Referenzen, Skripten oder weiteren Dateien. Die App kann diesen ganzen Ordner überarbeiten. Das Modell selbst bleibt unverändert.
+Skill Trainer erstellt und verbessert Agent-Skills mit Cursor oder Codex App Server als Inference-Anbieter. Ein Skill besteht aus einer `SKILL.md` und optionalen Referenzen, Skripten oder weiteren Dateien. Die App kann diesen ganzen Ordner überarbeiten. Das Modell selbst bleibt unverändert.
 
 Beim Fine-Tuning bearbeitet ein Zielmodell deinen Auftrag in frischen Projektkopien. Ein zweites, als Optimierer eingesetztes Modell wertet die Ergebnisse aus und schlägt Änderungen am Skill vor. Neue Läufe prüfen anschließend, ob die Kandidatenfassung besser abschneidet. Nur ein höherer Gate-Score wird innerhalb der Sitzung übernommen.
 
@@ -28,7 +28,7 @@ Vortraining und Create Skill erzeugen zunächst einen **ungemessenen Entwurf**. 
 - **Links:** Workflow, Projekt, Skill, Auftrag, Prüfung und Budgets. Unter dem Formular siehst du die geschätzte maximale Zahl der Agent-Läufe und startest die Sitzung.
 - **In der Mitte:** Der Verlauf zeigt Phasen, einzelne Läufe, Vorschläge und den Abschlussbericht.
 - **Rechts:** Klicke einen Lauf im Verlauf an, um dessen Ausgabe und Werkzeugaufrufe zu öffnen.
-- **Oben:** Trainings-Tabs und die Cursor-Anmeldung. Über **+ Training** legst du eine weitere Sitzung mit den Einstellungen des aktiven Tabs an.
+- **Oben:** Trainings-Tabs und die Anmeldung des im aktiven Tab gewählten Anbieters. Über **+ Training** legst du eine weitere Sitzung mit den Einstellungen des aktiven Tabs an.
 
 Die Trennlinien zwischen den Bereichen lassen sich verschieben. Du kannst mehrere Trainings in eigenen Tabs laufen lassen. Schließt du einen laufenden Trainings-Tab, bricht die App diese Sitzung ab.
 

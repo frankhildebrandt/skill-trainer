@@ -118,6 +118,8 @@ export type SkillScope = "general" | "specific";
 
 export type SkillWorkflow = "train" | "pretrain" | "create";
 
+export type InferenceProvider = "cursor" | "codex";
+
 export interface OptimizerBudget {
   unlimited: boolean;
   maxEditChars: number;
@@ -134,6 +136,8 @@ export interface SkillDraft {
 }
 
 export interface TrainRequest {
+  /** Older sessions use Cursor when no provider is recorded. */
+  provider?: InferenceProvider;
   workflow?: SkillWorkflow;
   skillName?: string;
   skillBrief?: string;
@@ -204,14 +208,14 @@ export interface TrainerApi {
   loadLocale: () => Promise<Locale>;
   saveLocale: (locale: Locale) => Promise<void>;
   onLocaleChange: (cb: (locale: Locale) => void) => () => void;
-  authStatus: () => Promise<AuthStatus>;
-  authLogin: () => Promise<AuthStatus>;
-  listModels: () => Promise<{ models: ModelOption[]; error?: string }>;
+  authStatus: (provider?: InferenceProvider) => Promise<AuthStatus>;
+  authLogin: (provider?: InferenceProvider) => Promise<AuthStatus>;
+  listModels: (provider?: InferenceProvider) => Promise<{ models: ModelOption[]; error?: string }>;
   pickSkill: () => Promise<string | null>;
   pickSkillDestination: () => Promise<string | null>;
   pickFolder: () => Promise<string | null>;
   listProjectSkills: (workspacePath: string) => Promise<ProjectSkill[]>;
-  deriveSkillFields: (skillPath: string, model: string) => Promise<{ ziel: string; auftrag: string }>;
+  deriveSkillFields: (skillPath: string, model: string, provider?: InferenceProvider) => Promise<{ ziel: string; auftrag: string }>;
   readSkill: (skillPath: string) => Promise<{
     name: string;
     chars: number;

@@ -10,14 +10,14 @@ const api: TrainerApi = {
     ipcRenderer.on("locale:changed", listener);
     return () => ipcRenderer.removeListener("locale:changed", listener);
   },
-  authStatus: () => ipcRenderer.invoke("auth:status"),
-  authLogin: () => ipcRenderer.invoke("auth:login"),
-  listModels: () => ipcRenderer.invoke("models:list"),
+  authStatus: (provider) => ipcRenderer.invoke("auth:status", provider),
+  authLogin: (provider) => ipcRenderer.invoke("auth:login", provider),
+  listModels: (provider) => ipcRenderer.invoke("models:list", provider),
   pickSkill: () => ipcRenderer.invoke("dialog:skill"),
   pickSkillDestination: () => ipcRenderer.invoke("dialog:skill-destination"),
   pickFolder: () => ipcRenderer.invoke("dialog:folder"),
   listProjectSkills: (workspacePath) => ipcRenderer.invoke("skills:list", workspacePath),
-  deriveSkillFields: (skillPath, model) => ipcRenderer.invoke("skill:derive", skillPath, model),
+  deriveSkillFields: (skillPath, model, provider) => ipcRenderer.invoke("skill:derive", skillPath, model, provider),
   readSkill: (skillPath) => ipcRenderer.invoke("skill:read", skillPath),
   loadSettings: () => ipcRenderer.invoke("settings:load"),
   saveSettings: (request: TrainRequest) => ipcRenderer.invoke("settings:save", request),

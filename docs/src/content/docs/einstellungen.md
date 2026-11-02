@@ -46,13 +46,16 @@ Beide Prüfmodi werden unter [Prüfung und Testskripte](/docs/pruefung/) erklär
 
 | Feld | Standard | Wirkung |
 | --- | --- | --- |
+| **Inference-Anbieter** | Cursor | Cursor-SDK oder lokaler Codex App Server. Gilt für alle Modellaufrufe dieser Sitzung; Anmeldung und Modellliste wechseln mit dem Anbieter. |
 | **Ziel → Allgemein** | ausgewählt | Optimierer soll ein wiederverwendbares Verfahren formulieren. |
 | **Ziel → Dieser Auftrag / Dieser Zweck** | aus | Erlaubt konkrete Befehle, Pfade, APIs und Fallstricke für den angegebenen Auftrag beziehungsweise Zweck. |
 | **In eigenen Worten** | leer | Zusätzliche Ausrichtung beim Fine-Tuning. Bei Entwurfsworkflows übernimmt die Pflichtbeschreibung diese Rolle. |
-| **Zielmodell** | Composer 2.5 | Führt Training, Baseline und Gate aus. Erstellt bei Agent-Prüfung auch das Testskript. Ohne Fine-Tuning ausgeblendet. |
-| **Optimierer** | Composer 2.5 | Erstellt Entwürfe und Vorschläge zur Überarbeitung des Skill-Ordners. |
+| **Zielmodell** | Composer 2.5 bei Cursor | Führt Training, Baseline und Gate aus. Erstellt bei Agent-Prüfung auch das Testskript. Ohne Fine-Tuning ausgeblendet. |
+| **Optimierer** | Composer 2.5 bei Cursor | Erstellt Entwürfe und Vorschläge zur Überarbeitung des Skill-Ordners. |
 
-Die Modellliste stammt aus dem Cursor-SDK. Beide Rollen dürfen dasselbe Modell verwenden; sie haben unterschiedliche Aufgaben im Ablauf.
+Die Modellliste stammt beim Anbieter Cursor aus dem Cursor-SDK, bei Codex aus `model/list` des lokalen App Servers. Codex hat deshalb keine fest eingetragene Composer-Voreinstellung. Beide Rollen dürfen dasselbe Modell verwenden; sie haben unterschiedliche Aufgaben im Ablauf. **Mit Modell füllen** nutzt ebenfalls den ausgewählten Anbieter.
+
+Die Auswahl **Aus Cursor-Läufen** bleibt eine Cursor-Historie. Sie kann auch einen Trainingsauftrag für eine Codex-Sitzung liefern, listet aber keine Codex-Läufe auf. Einrichtung und Anmeldung beschreibt [Installation](/docs/installation/).
 
 ## Umfang des Trainings
 
