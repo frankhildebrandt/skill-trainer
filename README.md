@@ -2,14 +2,14 @@
 
 # Skill Trainer
 
-Die Astro-Produktseite und Bedienungsdokumentation liegen unter [`docs/`](docs/README.md). Mit Node.js ab 22.23.4 lokal starten:
+Die [Produktseite mit Dokumentation](https://frankhildebrandt.github.io/skill-trainer/) wird mit Astro gebaut. Der Quellcode liegt unter [`docs/`](docs/README.md). Mit Node.js ab 22.23.4 lokal starten:
 
 ```bash
 npm ci --prefix docs
 npm run docs:dev
 ```
 
-Die Startseite stellt die App mit Screenshots vor. Unter `/docs/` folgen Einstieg, Workflows, Prüfung, Ergebnisse und eine vollständige Referenz aller Einstellungen und Schalter. `npm run docs:check` prüft die Astro-Dateien; `npm run docs:build` baut die statische Website und prüft ihre internen Links.
+Die Startseite stellt die App mit Screenshots vor. Unter `/skill-trainer/docs/` folgen Einstieg, Workflows, Prüfung, Ergebnisse und eine vollständige Referenz aller Einstellungen und Schalter. `npm run docs:check` prüft die Astro-Dateien; `npm run docs:build` baut die statische Website und prüft ihre internen Links. GitHub Actions prüft Website-Änderungen in Pull Requests und veröffentlicht sie nach einem Push auf `main` automatisch auf GitHub Pages.
 
 Trainiert eine `SKILL.md` gegen einen Projektordner und einen Auftrag. Die Läufe gehen über das Cursor-SDK und damit über dein Cursor-Abo. Electron, weil das SDK in Node läuft.
 

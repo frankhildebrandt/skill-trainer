@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { withBase } from "../lib/urls";
 import "../styles/landing.css";
 
 const phases = [
@@ -21,13 +22,13 @@ const guides = [
       <h1 id="hero-title">Mach aus Erfahrung<br /><span>bessere Skills.</span></h1>
       <p class="hero-description">Erstelle und verbessere Skills an echten Aufgaben.<br class="desktop-break" /> Mit messbaren Ergebnissen und dem letzten Wort bei dir.</p>
       <div class="hero-actions">
-        <a class="button" href="/docs/installation/">Jetzt loslegen <span aria-hidden="true">→</span></a>
-        <a class="text-link" href="/docs/">Dokumentation lesen <span aria-hidden="true">↗</span></a>
+        <a class="button" href={withBase("/docs/installation/")}>Jetzt loslegen <span aria-hidden="true">→</span></a>
+        <a class="text-link" href={withBase("/docs/")}>Dokumentation lesen <span aria-hidden="true">↗</span></a>
       </div>
       <p class="hero-footnote"><span>Electron-App</span><span>Cursor-SDK</span><span>Dein Skill-Ordner im Mittelpunkt</span></p>
       <figure class="product-shot hero-shot">
-        <div class="shot-label"><span><span class="status-dot"></span> Einblick in die App</span><a href="/screenshots/training.png">Screenshot vergrößern <span aria-hidden="true">↗</span></a></div>
-        <a href="/screenshots/training.png" aria-label="Screenshot der Trainingsansicht in voller Größe öffnen"><img src="/screenshots/training.png" width="1600" height="1000" alt="Skill Trainer mit Einstellungen links, Trainingsverlauf in der Mitte und Agentenausgabe rechts" fetchpriority="high" /></a>
+        <div class="shot-label"><span><span class="status-dot"></span> Einblick in die App</span><a href={withBase("/screenshots/training.png")}>Screenshot vergrößern <span aria-hidden="true">↗</span></a></div>
+        <a href={withBase("/screenshots/training.png")} aria-label="Screenshot der Trainingsansicht in voller Größe öffnen"><img src={withBase("/screenshots/training.png")} width="1600" height="1000" alt="Skill Trainer mit Einstellungen links, Trainingsverlauf in der Mitte und Agentenausgabe rechts" fetchpriority="high" /></a>
         <figcaption>Die echte App-Oberfläche mit Beispieldaten. Gezeigte Messwerte sind keine Leistungsversprechen.</figcaption>
       </figure>
     </section>
@@ -36,7 +37,7 @@ const guides = [
       <p class="eyebrow">Die Idee dahinter</p>
       <div class="intro-grid">
         <h2 id="intro-title">Dein Modell bleibt.<br />Dein Skill lernt dazu.</h2>
-        <div class="intro-copy"><p>Ein guter Skill hält fest, wie ein Agent eine Aufgabe angehen soll. Skill Trainer hilft dir, diesen Ablauf systematisch zu verbessern.</p><p>Trainiert wird der ganze Skill-Ordner: die <code>SKILL.md</code>, ihre Referenzen und Skripte. Ein zweiter Agent schlägt Änderungen vor. Frische Prüfläufe zeigen, ob sie helfen.</p><a class="text-link" href="/docs/training/">Das Trainingsprinzip verstehen <span aria-hidden="true">→</span></a></div>
+        <div class="intro-copy"><p>Ein guter Skill hält fest, wie ein Agent eine Aufgabe angehen soll. Skill Trainer hilft dir, diesen Ablauf systematisch zu verbessern.</p><p>Trainiert wird der ganze Skill-Ordner: die <code>SKILL.md</code>, ihre Referenzen und Skripte. Ein zweiter Agent schlägt Änderungen vor. Frische Prüfläufe zeigen, ob sie helfen.</p><a class="text-link" href={withBase("/docs/training/")}>Das Trainingsprinzip verstehen <span aria-hidden="true">→</span></a></div>
       </div>
       <div class="principles"><span><span aria-hidden="true">↗</span> Qualität am Test messen</span><span><span aria-hidden="true">⌘</span> In Projektkopien arbeiten</span><span><span aria-hidden="true">✓</span> Änderungen selbst freigeben</span></div>
     </section>
@@ -45,7 +46,7 @@ const guides = [
       <div class="wrap">
         <div class="section-heading"><div><p class="eyebrow">Von der Aufgabe zum besseren Ablauf</p><h2 id="workflow-title">Ein klarer Lernzyklus.</h2></div><p>Jeder Vorschlag muss sich bewähren.<br />Ein Gleichstand reicht am Gate nicht aus.</p></div>
         <ol class="phase-grid">{phases.map((phase) => <li><div class="phase-number">{phase.number}<span aria-hidden="true">→</span></div><h3>{phase.title}</h3><p>{phase.text}</p><code>{phase.code}</code></li>)}</ol>
-        <div class="gate-note"><span class="gate-symbol" aria-hidden="true">✓</span><p><strong>Erst die Aufgabe lösen. Dann auf Effizienz schauen.</strong> Der Gate-Score gewichtet Testerfolg mit 85 % und weniger Werkzeugaufrufe mit 15 %.</p><a href="/docs/pruefung/">So wird geprüft <span aria-hidden="true">→</span></a></div>
+        <div class="gate-note"><span class="gate-symbol" aria-hidden="true">✓</span><p><strong>Erst die Aufgabe lösen. Dann auf Effizienz schauen.</strong> Der Gate-Score gewichtet Testerfolg mit 85 % und weniger Werkzeugaufrufe mit 15 %.</p><a href={withBase("/docs/pruefung/")}>So wird geprüft <span aria-hidden="true">→</span></a></div>
       </div>
     </section>
 
@@ -56,28 +57,28 @@ const guides = [
           <div><dt><span>02</span> Vortraining</dt><dd>Baue einen vorhandenen Skill nach deinen Vorgaben um oder erweitere ihn.</dd></div>
           <div><dt><span>03</span> Fine-Tuning</dt><dd>Verbessere deinen Skill anhand von Aufgaben, Tests und frischen Gate-Läufen.</dd></div>
         </dl>
-        <a class="text-link" href="/docs/workflows/">Den passenden Workflow finden <span aria-hidden="true">→</span></a>
+        <a class="text-link" href={withBase("/docs/workflows/")}>Den passenden Workflow finden <span aria-hidden="true">→</span></a>
       </div>
-      <figure class="product-shot detail-shot"><a href="/screenshots/create-skill.png" aria-label="Screenshot von Create Skill in voller Größe öffnen"><img src="/screenshots/create-skill.png" width="1600" height="1000" loading="lazy" alt="Create-Skill-Workflow der App mit Name, neuem Skill-Ordner und Beschreibung" /></a><figcaption>Create Skill mit Beispieldaten. Ein Entwurf ist erst nach dem Fine-Tuning auf seine Leistung geprüft.</figcaption></figure>
+      <figure class="product-shot detail-shot"><a href={withBase("/screenshots/create-skill.png")} aria-label="Screenshot von Create Skill in voller Größe öffnen"><img src={withBase("/screenshots/create-skill.png")} width="1600" height="1000" loading="lazy" alt="Create-Skill-Workflow der App mit Name, neuem Skill-Ordner und Beschreibung" /></a><figcaption>Create Skill mit Beispieldaten. Ein Entwurf ist erst nach dem Fine-Tuning auf seine Leistung geprüft.</figcaption></figure>
     </section>
 
     <section class="settings-section wrap" aria-labelledby="settings-title">
-      <figure class="product-shot detail-shot"><a href="/screenshots/settings.png" aria-label="Screenshot der Einstellungen in voller Größe öffnen"><img src="/screenshots/settings.png" width="1600" height="1000" loading="lazy" alt="Einstellungen der App mit Gate, Slow-Update, Lernrate und Edit- sowie Laufbudgets" /></a><figcaption>Einstellungen der echten App mit Beispieldaten. Alle Felder und Schalter sind dokumentiert.</figcaption></figure>
-      <div class="feature-copy"><p class="eyebrow">Nachvollziehbar bis ins Detail</p><h2 id="settings-title">Du bestimmst<br />den Rahmen.</h2><p>Wähle Modelle, Trainingsumfang und Budgets. Verfolge im Verlauf, was passiert, und öffne einzelne Agentenläufe für die Details.</p><ul class="check-list"><li>Separate Budgets für Text- und Datei-Edits</li><li>Geplante Agent-Läufe vor dem Start sehen</li><li>Baseline und Gate optional im leeren Repository</li><li>Bericht und Änderungen vor dem Speichern prüfen</li></ul><a class="text-link" href="/docs/einstellungen/">Alle Einstellungen erklärt <span aria-hidden="true">→</span></a></div>
+      <figure class="product-shot detail-shot"><a href={withBase("/screenshots/settings.png")} aria-label="Screenshot der Einstellungen in voller Größe öffnen"><img src={withBase("/screenshots/settings.png")} width="1600" height="1000" loading="lazy" alt="Einstellungen der App mit Gate, Slow-Update, Lernrate und Edit- sowie Laufbudgets" /></a><figcaption>Einstellungen der echten App mit Beispieldaten. Alle Felder und Schalter sind dokumentiert.</figcaption></figure>
+      <div class="feature-copy"><p class="eyebrow">Nachvollziehbar bis ins Detail</p><h2 id="settings-title">Du bestimmst<br />den Rahmen.</h2><p>Wähle Modelle, Trainingsumfang und Budgets. Verfolge im Verlauf, was passiert, und öffne einzelne Agentenläufe für die Details.</p><ul class="check-list"><li>Separate Budgets für Text- und Datei-Edits</li><li>Geplante Agent-Läufe vor dem Start sehen</li><li>Baseline und Gate optional im leeren Repository</li><li>Bericht und Änderungen vor dem Speichern prüfen</li></ul><a class="text-link" href={withBase("/docs/einstellungen/")}>Alle Einstellungen erklärt <span aria-hidden="true">→</span></a></div>
     </section>
 
     <section class="guides-section wrap" aria-labelledby="guides-title">
-      <div class="section-heading"><div><p class="eyebrow">Weniger raten. Mehr verstehen.</p><h2 id="guides-title">Die Doku gehört dazu.</h2></div><a class="text-link" href="/docs/">Zur gesamten Dokumentation <span aria-hidden="true">→</span></a></div>
-      <div class="guides-grid">{guides.map((guide) => <a class="guide-card" href={guide.href}><div class="guide-top"><span>{guide.label}</span><span aria-hidden="true">↗</span></div><span class="guide-number">{guide.number}</span><h3>{guide.title}</h3><p>{guide.text}</p><span class="guide-bottom">Anleitung öffnen <span aria-hidden="true">→</span></span></a>)}</div>
+      <div class="section-heading"><div><p class="eyebrow">Weniger raten. Mehr verstehen.</p><h2 id="guides-title">Die Doku gehört dazu.</h2></div><a class="text-link" href={withBase("/docs/")}>Zur gesamten Dokumentation <span aria-hidden="true">→</span></a></div>
+      <div class="guides-grid">{guides.map((guide) => <a class="guide-card" href={withBase(guide.href)}><div class="guide-top"><span>{guide.label}</span><span aria-hidden="true">↗</span></div><span class="guide-number">{guide.number}</span><h3>{guide.title}</h3><p>{guide.text}</p><span class="guide-bottom">Anleitung öffnen <span aria-hidden="true">→</span></span></a>)}</div>
     </section>
 
     <section class="faq-section wrap" aria-labelledby="faq-title"><div><p class="eyebrow">Vor dem ersten Start</p><h2 id="faq-title">Gut zu wissen.</h2><p>Die häufigsten Fragen, direkt beantwortet.</p></div><div class="faq-list">
       <details><summary>Wird das Modell selbst trainiert?<span aria-hidden="true">+</span></summary><p>Der trainierbare Zustand ist dein Skill-Ordner. Skill Trainer überarbeitet Anweisungen, Referenzen und Skripte. Das Zielmodell bleibt gleich.</p></details>
-      <details><summary>Was brauche ich zum Starten?<span aria-hidden="true">+</span></summary><p>Die App wird aktuell aus dem Quellcode gestartet. Du brauchst Node.js ab 22.13, Git und einen Cursor-Zugang. Die Projektkopien verwenden außerdem macOS-Werkzeuge. Die <a href="/docs/installation/">Installationsanleitung</a> beschreibt den Start.</p></details>
+      <details><summary>Was brauche ich zum Starten?<span aria-hidden="true">+</span></summary><p>Die App wird aktuell aus dem Quellcode gestartet. Du brauchst Node.js ab 22.13, Git und einen Cursor-Zugang. Die Projektkopien verwenden außerdem macOS-Werkzeuge. Die <a href={withBase("/docs/installation/")}>Installationsanleitung</a> beschreibt den Start.</p></details>
       <details><summary>Wird mein Projekt dabei verändert?<span aria-hidden="true">+</span></summary><p>Trainingsläufe arbeiten in eigenen Kopien deines Projekts, einschließlich uncommitteter Dateien. Den gewählten Skill-Ordner schreibt die App erst, wenn du „Änderungen übernehmen“ klickst. Bei bestehenden Skills legt sie vorher ein Backup an.</p></details>
-      <details><summary>Laufen die Agenten vollständig lokal?<span aria-hidden="true">+</span></summary><p>Die App und Projektkopien liegen auf deinem Rechner. Die Agenten verwenden das Cursor-SDK und die dort verfügbaren Modelle. Nutzung wird über Cursor abgerechnet; sie ist kein lokales Modelltraining. Mehr dazu unter <a href="/docs/dateien-und-sicherheit/">Dateien und Datenfluss</a>.</p></details>
+      <details><summary>Laufen die Agenten vollständig lokal?<span aria-hidden="true">+</span></summary><p>Die App und Projektkopien liegen auf deinem Rechner. Die Agenten verwenden das Cursor-SDK und die dort verfügbaren Modelle. Nutzung wird über Cursor abgerechnet; sie ist kein lokales Modelltraining. Mehr dazu unter <a href={withBase("/docs/dateien-und-sicherheit/")}>Dateien und Datenfluss</a>.</p></details>
     </div></section>
 
-    <section class="final-cta wrap"><div class="cta-mark" aria-hidden="true">↗</div><p class="eyebrow">Dein nächster Skill kann mehr.</p><h2>Gib Erfahrung<br />einen festen Platz.</h2><p>Starte mit einem Skill, einer Aufgabe und einer guten Prüfung.</p><a class="button" href="/docs/installation/">Skill Trainer einrichten <span aria-hidden="true">→</span></a><a class="cta-secondary" href="https://github.com/frankhildebrandt/skill-trainer">Quellcode auf GitHub <span aria-hidden="true">↗</span></a></section>
+    <section class="final-cta wrap"><div class="cta-mark" aria-hidden="true">↗</div><p class="eyebrow">Dein nächster Skill kann mehr.</p><h2>Gib Erfahrung<br />einen festen Platz.</h2><p>Starte mit einem Skill, einer Aufgabe und einer guten Prüfung.</p><a class="button" href={withBase("/docs/installation/")}>Skill Trainer einrichten <span aria-hidden="true">→</span></a><a class="cta-secondary" href="https://github.com/frankhildebrandt/skill-trainer">Quellcode auf GitHub <span aria-hidden="true">↗</span></a></section>
   </main>
 </BaseLayout>

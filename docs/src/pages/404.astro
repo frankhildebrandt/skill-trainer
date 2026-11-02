@@ -1,11 +1,12 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { withBase } from "../lib/urls";
 ---
-<BaseLayout title="Seite nicht gefunden">
+<BaseLayout title="Seite nicht gefunden" noindex>
   <main id="main" class="not-found wrap">
     <p class="eyebrow">404 · Seite nicht gefunden</p>
     <h1>Hier geht’s<br />nicht weiter.</h1>
     <p>Vielleicht wurde die Seite verschoben. In der Dokumentation findest du den passenden Einstieg.</p>
-    <a class="button" href="/docs/">Zur Dokumentation <span aria-hidden="true">→</span></a>
+    <a class="button" href={withBase("/docs/")}>Zur Dokumentation <span aria-hidden="true">→</span></a>
   </main>
 </BaseLayout>

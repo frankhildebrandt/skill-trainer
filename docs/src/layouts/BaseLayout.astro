@@ -1,11 +1,13 @@
 ---
 import Logo from "../components/Logo.astro";
 import Search from "../components/Search.astro";
+import { withBase } from "../lib/urls";
 import "../styles/global.css";
 
-interface Props { title?: string; description?: string; documentation?: boolean; }
-const { title, description = "Erstelle und verbessere Cursor-Skills mit echten Aufgaben, frischen Prüfläufen und nachvollziehbaren Änderungen. Die Desktop-App für deinen Skill-Ordner.", documentation = false } = Astro.props;
+interface Props { title?: string; description?: string; documentation?: boolean; noindex?: boolean; }
+const { title, description = "Erstelle und verbessere Cursor-Skills mit echten Aufgaben, frischen Prüfläufen und nachvollziehbaren Änderungen. Die Desktop-App für deinen Skill-Ordner.", documentation = false, noindex = false } = Astro.props;
 const pageTitle = title ? `${title} · Skill Trainer` : "Skill Trainer – Mach aus Erfahrung bessere Skills";
+const canonicalUrl = Astro.site && !noindex ? new URL(Astro.url.pathname, Astro.site) : undefined;
 ---
 <!doctype html>
 <html lang="de">
@@ -13,11 +15,13 @@ const pageTitle = title ? `${title} · Skill Trainer` : "Skill Trainer – Mach 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
     <meta name="theme-color" content="#080b12" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={description} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    {canonicalUrl && <><link rel="canonical" href={canonicalUrl} /><meta property="og:url" content={canonicalUrl} /></>}
+    <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
     <title>{pageTitle}</title>
   </head>
   <body class:list={[{ "docs-page": documentation }]}>
@@ -26,11 +30,11 @@ const pageTitle = title ? `${title} · Skill Trainer` : "Skill Trainer – Mach 
       <div class="header-inner">
         <Logo />
         <nav class="site-nav" aria-label="Hauptnavigation">
-          <a href="/#ablauf">So funktioniert’s</a>
-          <a href="/docs/" aria-current={documentation ? "true" : undefined}>Dokumentation</a>
+          <a href={withBase("/#ablauf")}>So funktioniert’s</a>
+          <a href={withBase("/docs/")} aria-current={documentation ? "true" : undefined}>Dokumentation</a>
           <a class="github-link" href="https://github.com/frankhildebrandt/skill-trainer" aria-label="Skill Trainer auf GitHub">GitHub <span aria-hidden="true">↗</span></a>
         </nav>
-        {documentation ? <Search /> : <a class="button button-small" href="/docs/installation/">Loslegen <span aria-hidden="true">↗</span></a>}
+        {documentation ? <Search /> : <a class="button button-small" href={withBase("/docs/installation/")}>Loslegen <span aria-hidden="true">↗</span></a>}
       </div>
     </header>
     <slot />
@@ -38,8 +42,8 @@ const pageTitle = title ? `${title} · Skill Trainer` : "Skill Trainer – Mach 
       <div class="footer-inner">
         <div><Logo /><p>Ein besserer Ablauf beginnt mit einem besseren Skill.</p></div>
         <nav aria-label="Fußnavigation">
-          <a href="/docs/installation/">Installation</a>
-          <a href="/docs/">Dokumentation</a>
+          <a href={withBase("/docs/installation/")}>Installation</a>
+          <a href={withBase("/docs/")}>Dokumentation</a>
           <a href="https://github.com/frankhildebrandt/skill-trainer">Quellcode <span aria-hidden="true">↗</span></a>
         </nav>
         <span class="footer-note">Gebaut für Cursor. Eigenständiges Projekt.</span>

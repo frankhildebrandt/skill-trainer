@@ -1,9 +1,10 @@
 import { getCollection, type CollectionEntry } from "astro:content";
+import { withBase } from "./urls";
 
 export const sections = ["Start", "Anwendung", "Referenz"] as const;
 
 export function docUrl(id: string): string {
-  return id === "index" ? "/docs/" : `/docs/${id}/`;
+  return withBase(id === "index" ? "/docs/" : `/docs/${id}/`);
 }
 
 export async function orderedDocs(): Promise<CollectionEntry<"docs">[]> {

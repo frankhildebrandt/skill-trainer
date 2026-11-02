@@ -111,12 +111,16 @@ async function runExample(_request: TrainRequest, sessionId: string) {
 
 window.localStorage.setItem("skill-trainer.panes", JSON.stringify({ panel: 352, feed: 480 }));
 window.trainer = {
+  loadLocale: async () => "de",
+  saveLocale: async () => undefined,
+  onLocaleChange: () => () => undefined,
   authStatus: async () => ({ state: "logged-in", email: "demo@example.com", via: "login" }),
   authLogin: async () => ({ state: "logged-in", email: "demo@example.com", via: "login" }),
   listModels: async () => ({ models: [{ id: "composer-2.5", label: "Composer 2.5" }] }),
   loadSettings: async () => settings,
   saveSettings: async () => undefined,
   listProjectSkills: async () => [{ root: settings.skillPath, name: "react-testing", relative: ".cursor/skills/react-testing" }],
+  deriveSkillFields: async () => ({ ziel: settings.skillBrief ?? "", auftrag: settings.auftrag }),
   readSkill: async () => ({ name: "react-testing", chars: originalSkill.length, preview: originalSkill, root: settings.skillPath, fileCount: 2, files: ["SKILL.md", "references/test-checkliste.md"] }),
   pickSkill: async () => null,
   pickSkillDestination: async () => null,
@@ -130,4 +134,4 @@ window.trainer = {
   chooseCursorRun: async () => undefined,
   cancelCursorRun: async () => undefined,
   onEvent: (subscriber) => { subscribers.add(subscriber); return () => { subscribers.delete(subscriber); }; },
-} as TrainerApi;
+};

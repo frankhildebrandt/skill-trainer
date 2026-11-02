@@ -1,6 +1,6 @@
 # Skill Trainer · Produktseite und Dokumentation
 
-Eigenständige, statisch gebaute Astro-Seite auf Deutsch. `/` stellt die App vor; `/docs/` enthält die Bedienungsdokumentation und eine lokale Volltextsuche. Die Electron-App benötigt die Website nicht.
+Eigenständige, statisch gebaute Astro-Seite auf Deutsch. Die [Marketing-Landingpage](https://frankhildebrandt.github.io/skill-trainer/) stellt die App vor; die [Dokumentation](https://frankhildebrandt.github.io/skill-trainer/docs/) enthält Anleitungen, Referenz und eine lokale Volltextsuche. Die Electron-App benötigt die Website nicht.
 
 ## Lokal starten
 
@@ -11,7 +11,7 @@ npm ci --prefix docs
 npm run docs:dev
 ```
 
-Astro zeigt die lokale Adresse an, normalerweise `http://127.0.0.1:4321`.
+Astro zeigt die lokale Adresse an, normalerweise `http://127.0.0.1:4321/skill-trainer/`. Lokal gilt derselbe Basispfad wie auf GitHub Pages.
 
 ## Prüfen und bauen
 
@@ -21,9 +21,17 @@ npm run docs:build
 npm run docs:preview
 ```
 
-Der Build erzeugt `docs/dist/` und prüft anschließend alle internen Links, Sprungmarken und eingebundenen Dateien. Das Verzeichnis kann auf einem beliebigen statischen Host unter dessen Domain-Wurzel veröffentlicht werden. Es werden weder ein Server-Adapter noch Zugangsdaten benötigt. Für ein Hosting in einem Unterverzeichnis müssen vorab die absoluten Links und Asset-Pfade sowie Astros `base` angepasst werden.
+Der Build erzeugt `docs/dist/` und prüft anschließend alle internen Links, Sprungmarken, eingebundenen Dateien und den Suchindex. `site` und `base` in `astro.config.mjs` konfigurieren die GitHub-Pages-Adresse. Navigation, Assets und Markdown-Links berücksichtigen den Basispfad automatisch. Für eine eigene Domain können `site` und `base` angepasst werden; für die Domain-Wurzel gilt `base: "/"`.
 
-Die Website wird durch diese Befehle nicht veröffentlicht. Die Electron-App selbst verlangt Node.js ab 22.13; die aktuelle Astro-Version für diese Website benötigt die oben genannte neuere Version.
+Die lokalen Befehle veröffentlichen die Website nicht. Die Electron-App selbst verlangt Node.js ab 22.13; die Astro-Website benötigt die oben genannte neuere Version.
+
+## GitHub Pages
+
+Der Workflow [`.github/workflows/docs.yml`](../.github/workflows/docs.yml) installiert ausschließlich die Website-Abhängigkeiten mit `npm ci` und verwendet Node.js 24. Pull Requests auf `main` werden mit Astro-Check, statischem Build und Link-Prüfung geprüft. Änderungen unter `docs/` oder am Workflow werden nach einem Push auf `main` automatisch veröffentlicht. Unter **Actions → Documentation → Run workflow** kann der Build auch manuell gestartet werden; nur `main` darf veröffentlichen.
+
+Unter **Settings → Pages → Build and deployment → Source** muss **GitHub Actions** aktiviert sein. Die Veröffentlichung verwendet das Environment `github-pages` und die temporären GitHub-Actions-Berechtigungen; zusätzliche Secrets oder ein `gh-pages`-Branch sind nicht nötig.
+
+Deployment-Ziel: **https://frankhildebrandt.github.io/skill-trainer/**. Hintergrund: [Astro-Anleitung für GitHub Pages](https://docs.astro.build/en/guides/deploy/github/) und [eigene Pages-Workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
 ## Inhalte bearbeiten
 

@@ -14,6 +14,7 @@
     "screenshots": "node scripts/capture-app.mjs"
   },
   "dependencies": {
+    "@astrojs/markdown-satteri": "^0.4.6",
     "astro": "^7.4.4"
   },
   "devDependencies": {
