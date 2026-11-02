@@ -1,3 +1,4 @@
+import type { ProviderConfig } from "./provider";
 import type { TranslationKey, TranslationValues } from "./i18n";
 import type { Locale } from "./i18n/types";
 import type { CursorRunCatalog } from "./cursor-runs";
@@ -134,6 +135,7 @@ export interface SkillDraft {
 }
 
 export interface TrainRequest {
+  provider?: ProviderConfig;
   workflow?: SkillWorkflow;
   skillName?: string;
   skillBrief?: string;
@@ -206,12 +208,12 @@ export interface TrainerApi {
   onLocaleChange: (cb: (locale: Locale) => void) => () => void;
   authStatus: () => Promise<AuthStatus>;
   authLogin: () => Promise<AuthStatus>;
-  listModels: () => Promise<{ models: ModelOption[]; error?: string }>;
+  listModels: (provider?: ProviderConfig) => Promise<{ models: ModelOption[]; error?: string }>;
   pickSkill: () => Promise<string | null>;
   pickSkillDestination: () => Promise<string | null>;
   pickFolder: () => Promise<string | null>;
   listProjectSkills: (workspacePath: string) => Promise<ProjectSkill[]>;
-  deriveSkillFields: (skillPath: string, model: string) => Promise<{ ziel: string; auftrag: string }>;
+  deriveSkillFields: (skillPath: string, model: string, provider?: ProviderConfig) => Promise<{ ziel: string; auftrag: string }>;
   readSkill: (skillPath: string) => Promise<{
     name: string;
     chars: number;

@@ -1,3 +1,6 @@
+import type { ProviderConfig } from "../shared/provider";
+import { restoreProvider } from "../shared/provider";
+import { listCompatibleModels } from "../trainer/openai-runner";
 import { LocalizedError, localizedMessage } from "../shared/localized-error";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell, type NativeImage } from "electron";
 import { Cursor, CursorAgentError } from "@cursor/sdk";
@@ -88,7 +91,7 @@ export function registerBackend(): void {
     });
     return readAuth();
   });
-  handle("models:list", () => listModels());
+  handle("models:list", (_event, provider?: ProviderConfig) => listModels(provider));
   handle("dialog:skill", async () => {
     await localeReady;
     const result = await dialog.showOpenDialog(dialogParent(), {
@@ -125,12 +128,13 @@ export function registerBackend(): void {
   handle("settings:save", async (_event, request: TrainRequest) => {
     await writeSavedSettings(request);
   });
-  handle("skill:derive", async (_event, skillPath: unknown, modelId: unknown) => {
+  handle("skill:derive", async (_event, skillPath: unknown, modelId: unknown, provider?: ProviderConfig) => {
     const model = String(modelId ?? "").trim();
     if (!model) throw new Error(t("runner.noModel"));
     const bundle = await loadSkillBundle(String(skillPath ?? ""));
     const controller = new AbortController();
     return deriveSkillFields({
+      provider: restoreProvider(provider),
       locale: currentLocale,
       translate: t,
       model,
@@ -330,7 +334,7 @@ function sessionProposer(
     const cwd = path.join(sessionDir, "optimizer", runId);
     await fs.mkdir(cwd, { recursive: true });
     try {
-      const proposal = await proposeWithCursor({ ...input, translate: t, model: config.optimizerModel, cwd,
+      const proposal = await proposeWithCursor({ ...input, provider: config.provider, translate: t, model: config.optimizerModel, cwd,
         onActivity: (update) => emit({ type: "run_activity", runId, update }) });
       emit({ type: "run_activity", runId, update: { op: "note", text: t("backend.proposalReady") }, settled: true });
       return proposal;
@@ -358,6 +362,7 @@ async function authorChecks(
   try {
     emit({ type: "run_activity", runId: "testskript", title: t("backend.testScript"), label: { key: "backend.testScript" } });
     const trace = await executeAgent({
+      provider: config.provider,
       cwd: iso.dir,
       model: config.targetModel,
       prompt: buildCheckAuthorPrompt({ auftrag: config.auftrag, emptyGate: config.gateOnEmptyRepo }),
@@ -490,7 +495,7 @@ async function runOne(
       attemptTimeoutMs: config.attemptTimeoutMs,
       signal: input.signal,
       onActivity: (update) => emit({ type: "run_activity", runId, update }),
-      execute: executeAgent,
+      execute: (input) => executeAgent({ ...input, provider: config.provider }),
     });
     emit({
       type: "run_activity",
@@ -566,8 +571,10 @@ async function readAuth(): Promise<AuthStatus> {
   return { state: "logged-out", email: null, via: "none" };
 }
 
-async function listModels(): Promise<{ models: ModelOption[]; error?: string }> {
+async function listModels(provider?: ProviderConfig): Promise<{ models: ModelOption[]; error?: string }> {
   try {
+    const config = restoreProvider(provider);
+    if (config.kind !== "cursor") return { models: await listCompatibleModels(config) };
     const models = await Cursor.models.list();
     const options = models.map((model) => ({
       id: model.id,
@@ -579,7 +586,7 @@ async function listModels(): Promise<{ models: ModelOption[]; error?: string }> 
     return { models: options };
   } catch (err) {
     return {
-      models: [{ id: "composer-2.5", label: "Composer 2.5" }],
+      models: provider && provider.kind !== "cursor" ? [] : [{ id: "composer-2.5", label: "Composer 2.5" }],
       error: explain(err).message,
     };
   }

@@ -280,7 +280,7 @@ export function App() {
           <div className="auth">
             <span className={loggedIn ? "pill ok" : auth?.state === "error" ? "pill bad" : "pill"} title={(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}>
               <span className="pill-dot" aria-hidden="true" />
-              {(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}
+              Cursor · {(loggingIn ? t("app.browserOpen") : authLabel(auth, t))}
             </span>
             <button type="button" className="ghost" onClick={() => void login()} disabled={runningCount > 0 || loggingIn}>
               {t("app.login")}
@@ -578,7 +578,7 @@ function TrainingSession({
     const label = models.find((item) => item.id === model)?.label ?? model;
     pushFeed({ type: "note", text: t("runner.readingSkill", { model: label }) });
     try {
-      const fields = await api.deriveSkillFields(skillPath, model);
+      const fields = await api.deriveSkillFields(skillPath, model, form.provider);
       if (generation !== deriveGen.current) return;
       setForm((prev) => ({ ...prev, skillBrief: fields.ziel, auftrag: fields.auftrag }));
       pushFeed({ type: "note", text: t("runner.fieldsFilled") });

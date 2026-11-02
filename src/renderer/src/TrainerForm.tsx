@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { PROVIDERS, restoreProvider, type ProviderKind } from "@shared/provider";
+import { useEffect, useId, useRef, useState } from "react";
 import { matchesSkill } from "@shared/project-skill";
 import type { ModelOption, ProjectSkill, TrainRequest } from "@shared/types";
 import { BudgetFields } from "./BudgetFields";
@@ -8,7 +9,7 @@ import { useI18n } from "./i18n";
 export function TrainerForm({
   form,
   running,
-  models,
+  models: cursorModels,
   skillName,
   projectSkills,
   skillsNote,
@@ -35,6 +36,27 @@ export function TrainerForm({
   onDerive: () => void;
 }) {
   const { t } = useI18n();
+  const provider = restoreProvider(form.provider);
+  const compatible = provider.kind !== "cursor";
+  const [remoteModels, setRemoteModels] = useState<ModelOption[]>([]);
+  const [modelError, setModelError] = useState("");
+  const models = compatible ? remoteModels : cursorModels;
+  useEffect(() => {
+    setRemoteModels([]);
+    setModelError("");
+    if (!compatible) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void window.trainer.listModels(provider).then((result) => {
+        if (cancelled) return;
+        setRemoteModels(result.models);
+        setModelError(result.error ?? "");
+      }).catch((error: unknown) => {
+        if (!cancelled) setModelError(String(error));
+      });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [provider.kind, provider.baseUrl, provider.apiKeyEnv]);
   const paths = useRef({ create: "", existing: "" });
   const workflow = form.workflow ?? "train";
   const draft = workflow !== "train";
@@ -52,6 +74,28 @@ export function TrainerForm({
 
   return (
     <>
+      <label>
+        {t("provider.title")}
+        <select value={provider.kind} disabled={locked} onChange={(event) => {
+          const kind = event.target.value as ProviderKind;
+          onChange({ ...form, provider: { kind, ...PROVIDERS[kind] },
+            targetModel: kind === "cursor" ? "composer-2.5" : "",
+            optimizerModel: kind === "cursor" ? "composer-2.5" : "" });
+        }}>
+          {Object.entries(PROVIDERS).map(([kind, preset]) => <option key={kind} value={kind}>{kind === "compatible" ? t("provider.custom") : preset.label}</option>)}
+        </select>
+      </label>
+      {compatible ? <>
+        <label>{t("provider.url")}
+          <input type="url" required value={provider.baseUrl} disabled={locked} onChange={(event) => onChange({ ...form, provider: { ...provider, baseUrl: event.target.value } })} />
+        </label>
+        <label>{t("provider.keyEnv")}
+          <input value={provider.apiKeyEnv} disabled={locked} placeholder="OPENAI_API_KEY" onChange={(event) => onChange({ ...form, provider: { ...provider, apiKeyEnv: event.target.value } })} />
+          <small>{t("provider.keyHint")}</small>
+        </label>
+        <small>{t("provider.modelHint")}</small>
+        {modelError ? <p role="status">{t("provider.listError", { reason: modelError })}</p> : null}
+      </> : null}
       <label>
         {t("form.workflow")}
         <select value={workflow} disabled={locked} onChange={(event) => changeWorkflow(event.target.value as typeof workflow)}>
@@ -220,8 +264,8 @@ export function TrainerForm({
         ) : null}
       </fieldset>
       <div className="grid">
-        {fineTune ? <ModelField label={t("form.targetModel")} models={models} value={form.targetModel} disabled={locked} onChange={(targetModel) => onChange({ ...form, targetModel })} /> : null}
-        <ModelField label={t("form.optimizer")} models={models} value={form.optimizerModel} disabled={locked} onChange={(optimizerModel) => onChange({ ...form, optimizerModel })} />
+        {fineTune ? <ModelField custom={compatible} label={t("form.targetModel")} models={models} value={form.targetModel} disabled={locked} onChange={(targetModel) => onChange({ ...form, targetModel })} /> : null}
+        <ModelField custom={compatible} label={t("form.optimizer")} models={models} value={form.optimizerModel} disabled={locked} onChange={(optimizerModel) => onChange({ ...form, optimizerModel })} />
       </div>
       {fineTune ? (
         <>
@@ -300,20 +344,25 @@ function SkillField({
   );
 }
 
-function ModelField({ label, models, value, disabled, onChange }: {
+function ModelField({ label, models, value, disabled, onChange, custom }: {
+  custom?: boolean;
   label: string;
   models: ModelOption[];
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
+  const listId = useId();
   const choices = !value || models.some((model) => model.id === value) ? models : [{ id: value, label: value }, ...models];
   return (
     <label>
       {label}
-      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+      {custom ? <>
+        <input required list={listId} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+        <datalist id={listId}>{models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</datalist>
+      </> : <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
         {choices.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-      </select>
+      </select>}
     </label>
   );
 }

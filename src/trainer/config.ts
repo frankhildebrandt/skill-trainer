@@ -1,3 +1,4 @@
+import { restoreProvider, type ProviderConfig } from "../shared/provider";
 import { translate, type Locale, type Translate } from "../shared/i18n";
 import { DEFAULT_BUDGET } from "../shared/budget";
 import { estimateRuns } from "../shared/estimate";
@@ -5,6 +6,7 @@ import type { OptimizerBudget, SkillScope, SkillWorkflow, TrainRequest } from ".
 import { extraLines } from "./tasks";
 
 export interface NormalizedTrain {
+  provider: ProviderConfig;
   workflow: SkillWorkflow;
   skillName: string;
   skillBrief: string;
@@ -83,6 +85,7 @@ export function normalizeRequest(request: TrainRequest, locale: Locale = "de"): 
   }
 
   return {
+    provider: restoreProvider(request.provider),
     workflow, skillName, skillBrief, trainAfterDraft, budget, runBudget,
     skillPath, workspacePath, auftrag, extraTasks: extras, verifyMode,
     verifyCommand: verifyMode === "agent" ? "" : verifyCommand,

@@ -5,7 +5,7 @@ section: Start
 order: 20
 ---
 
-Skill Trainer läuft als Electron-Desktop-App. Zum Start aus dem Repository benötigst du **Node.js ab Version 22.13**, npm und Git. Die Agent-Läufe verwenden das Cursor-SDK und eine Cursor-Anmeldung oder einen API-Key.
+Skill Trainer läuft als Electron-Desktop-App. Zum Start aus dem Repository benötigst du **Node.js ab Version 22.13**, npm und Git. Die Agent-Läufe verwenden wahlweise das Cursor-SDK mit Cursor-Anmeldung oder einen OpenAI-kompatiblen API-Endpunkt.
 
 Die Projektkopien verwenden außerdem `tar` und beim Kopieren vorhandener `node_modules`-, `.venv`- oder `venv`-Ordner den Befehl `cp -cR`. Diese Clone-Option steht unter macOS zur Verfügung. Prüfe sie auf anderen Systemen; die aktuelle Implementierung enthält dafür keinen Ersatz.
 
@@ -35,6 +35,14 @@ Klicke im App-Fenster oben auf **Anmelden**. Das Cursor-SDK öffnet den Browser 
 Alternativ kannst du `CURSOR_API_KEY` in der Umgebung setzen, aus der du die App startest. Die Statusanzeige zeigt dann **API-Key**. Trage den Schlüssel weder in den Trainingsauftrag noch in einen Skill ein.
 
 Die Modellaufrufe werden über deine Cursor-Nutzung abgerechnet. Edit- und Laufbudgets sind Grenzen der App; sie sind kein Geld- oder Tokenbudget.
+
+## OpenAI, OpenRouter oder lokale Server verwenden
+
+Wähle im Trainingsformular den Anbieter. OpenAI und OpenRouter verwenden standardmäßig die Umgebungsvariablen `OPENAI_API_KEY` beziehungsweise `OPENROUTER_API_KEY`. Setze den Schlüssel in der Umgebung, aus der du `npm run dev` startest. Im Formular steht nur der Variablenname; Schlüsselwerte werden nicht in Einstellungen oder Sitzungsdateien gespeichert.
+
+Bei Ollama, MLX und LM Studio starte zuerst den jeweiligen lokalen Server und lade ein Modell mit Tool-Calling-Unterstützung. Die App setzt passende lokale API-Basis-URLs ein, die du anpassen kannst. Bei einem Server ohne Anmeldung bleibt das Feld für die Schlüsselvariable leer. Trage in Zielmodell und Optimierer die Modell-ID des Servers ein oder wähle aus dessen Modellliste.
+
+Die Anmeldung oben im Fenster betrifft ausschließlich Cursor. Für andere Anbieter ist sie nicht erforderlich. Alle URL-Vorgaben und Optionen stehen unter [Einstellungen](/docs/einstellungen/#anbieter-und-api-endpunkt).
 
 ## Projekt vorbereiten
 
